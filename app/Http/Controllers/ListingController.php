@@ -222,8 +222,8 @@ class ListingController extends Controller
             'allow_comments' => 'nullable|boolean',
             'specs_keys' => 'nullable|array',
             'specs_values' => 'nullable|array',
-            'images' => 'required|array|min:1|max:10',
-            'images.*' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120', // Max 5MB each
+            'images' => ($request->input('listing_type') === 'wanted' || $request->filled('job_type')) ? 'nullable|array|max:10' : 'required|array|min:1|max:10',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120', // Max 5MB each
         ], [
             'title.required' => 'يرجى إدخال عنوان الإعلان أو السلعة',
             'category_id.required' => 'يرجى اختيار القسم الرئيسي',
@@ -231,12 +231,31 @@ class ListingController extends Controller
             'price.required' => 'يرجى تحديد السعر',
             'description.required' => 'يرجى كتابة وصف تفصيلي للسلعة ومواصفاتها',
             'governorate_id.required' => 'يرجى اختيار المحافظة',
-            'images.required' => 'يرجى رفع صورة واحدة على الأقل للسلعة',
+            'images.required' => 'يرجى رفع صورة واحدة على الأقل للسلعة المعروضة للبيع',
             'images.*.image' => 'يجب أن تكون الملفات المرفوعة صوراً صالحة',
             'images.*.max' => 'حجم الصورة لا يجب أن يتجاوز 5 ميجابايت',
         ]);
 
+        // Sanitize string inputs to eliminate XSS
+        $validated['title'] = strip_tags($validated['title']);
+        $validated['description'] = strip_tags($validated['description'], '<p><br><b><strong><ul><li><ol>');
+        if (!empty($validated['district_name'])) {
+            $validated['district_name'] = strip_tags($validated['district_name']);
+        }
+        if (!empty($validated['street_address'])) {
+            $validated['street_address'] = strip_tags($validated['street_address']);
+        }
+
         // Build specs dictionary from form keys/values
+        $validated['title'] = strip_tags($validated['title']);
+        $validated['description'] = strip_tags($validated['description'], '<p><br><b><strong><ul><li><ol>');
+        if (!empty($validated['district_name'])) {
+            $validated['district_name'] = strip_tags($validated['district_name']);
+        }
+        if (!empty($validated['street_address'])) {
+            $validated['street_address'] = strip_tags($validated['street_address']);
+        }
+
         $specs = [];
         if (!empty($request->specs_keys) && is_array($request->specs_keys)) {
             foreach ($request->specs_keys as $idx => $key) {
@@ -302,6 +321,15 @@ class ListingController extends Controller
             'images' => 'nullable|array|max:10',
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
         ]);
+
+        $validated['title'] = strip_tags($validated['title']);
+        $validated['description'] = strip_tags($validated['description'], '<p><br><b><strong><ul><li><ol>');
+        if (!empty($validated['district_name'])) {
+            $validated['district_name'] = strip_tags($validated['district_name']);
+        }
+        if (!empty($validated['street_address'])) {
+            $validated['street_address'] = strip_tags($validated['street_address']);
+        }
 
         $specs = [];
         if (!empty($request->specs_keys) && is_array($request->specs_keys)) {

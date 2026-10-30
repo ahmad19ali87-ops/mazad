@@ -1,0 +1,24 @@
+# ==============================================================================
+# Hostinger Production Hardened .htaccess for Mazad Syria Platform
+# ==============================================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 1. Deny direct access to sensitive configuration files and folders
+    RewriteRule ^(\.env|\.git|\.editorconfig|composer\.(json|lock)|package\.json|artisan|phpunit\.xml) - [F,L,NC]
+    RewriteRule ^(app|bootstrap|config|database|resources|storage|tests)/ - [F,L,NC]
+
+    # 2. Transparently route all traffic to the public front controller
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Prevent directory indexing
+Options -Indexes
+
+# Block sensitive file patterns
+<FilesMatch "^\.(env|git|htaccess|htpasswd)|composer\.(json|lock)|package\.json|artisan|phpunit\.xml">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

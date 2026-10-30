@@ -13,6 +13,13 @@ use Illuminate\Support\Str;
 
 class ListingService
 {
+    protected SecureFileUploadService $fileUploadService;
+
+    public function __construct(SecureFileUploadService $fileUploadService)
+    {
+        $this->fileUploadService = $fileUploadService;
+    }
+
     /**
      * Store a new listing and handle multiple images + notifications.
      */
@@ -67,7 +74,7 @@ class ListingService
     }
 
     /**
-     * Upload and attach images to a listing.
+     * Upload, strictly scan, and attach images to a listing.
      */
     public function saveImages(Listing $listing, array $images): void
     {
@@ -76,14 +83,19 @@ class ListingService
 
         foreach ($images as $index => $file) {
             if ($file instanceof UploadedFile && $file->isValid()) {
-                // Strict MIME check
-                $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-                if (!in_array($file->getMimeType(), $allowedMimes)) {
+                // Strict Deep Security Inspection (MIME, Magic Bytes, Double Extension, Shell Code Scan)
+                $inspection = $this->fileUploadService->inspect($file);
+                if (!$inspection['is_safe']) {
+                    \Illuminate\Support\Facades\Log::warning("Blocked unsafe file upload for listing {$listing->id}: " . $inspection['reason']);
                     continue;
                 }
 
-                $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
-                $path = $file->storeAs('listings/' . $listing->id, $filename, 'public');
+                // Safely store with UUID and sanitization
+                $path = $this->fileUploadService->storeSafely(
+                    file: $file,
+                    destinationDir: 'listings/' . $listing->id,
+                    safeExt: $inspection['safe_extension']
+                );
 
                 ListingImage::create([
                     'listing_id' => $listing->id,

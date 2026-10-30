@@ -12,6 +12,7 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\MediaController;
 use App\Http\Controllers\SellerController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -117,3 +118,6 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->name('admin.')->group(fun
     Route::post('/comments/{id}/approve', [AdminCommentController::class, 'toggleApproval'])->name('comments.approve');
     Route::delete('/comments/{id}', [AdminCommentController::class, 'destroy'])->name('comments.destroy');
 });
+
+// Hostinger Storage Symlink Fallback: Safely serves images if symlink() is disabled on shared hosting
+Route::get('/storage/{path}', [MediaController::class, 'servePublicStorage'])->where('path', '.*')->name('media.fallback');
