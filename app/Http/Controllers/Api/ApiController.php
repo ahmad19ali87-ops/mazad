@@ -490,7 +490,15 @@ class ApiController extends Controller
             ->latest()
             ->paginate(20);
 
-        return response()->json(['success' => true, 'data' => $listings]);
+        return response()->json([
+            'success' => true,
+            'data' => $listings->items(),
+            'pagination' => [
+                'current_page' => $listings->currentPage(),
+                'last_page' => $listings->lastPage(),
+                'total' => $listings->total(),
+            ],
+        ]);
     }
 
     // In-app Notifications
@@ -499,7 +507,15 @@ class ApiController extends Controller
         $notifications = $request->user()->inAppNotifications()->paginate(20);
         $request->user()->inAppNotifications()->where('is_read', false)->update(['is_read' => true]);
 
-        return response()->json(['success' => true, 'data' => $notifications]);
+        return response()->json([
+            'success' => true,
+            'data' => $notifications->items(),
+            'pagination' => [
+                'current_page' => $notifications->currentPage(),
+                'last_page' => $notifications->lastPage(),
+                'total' => $notifications->total(),
+            ],
+        ]);
     }
 
     // Public Site & App Appearance Settings

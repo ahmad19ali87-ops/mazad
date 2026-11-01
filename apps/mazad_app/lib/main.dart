@@ -515,8 +515,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       final res = await http.get(uri);
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
+        final dynamic rawList = data['data'];
         setState(() {
-          _listings = data['data'] ?? [];
+          if (rawList is List) {
+            _listings = rawList;
+          } else if (rawList is Map && rawList['data'] is List) {
+            _listings = rawList['data'];
+          } else {
+            _listings = [];
+          }
         });
       }
     } catch (e) {
@@ -3118,8 +3125,15 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> with SingleTi
 
       if (listRes.statusCode == 200) {
         final lData = jsonDecode(listRes.body);
+        final dynamic rawList = lData['data'];
         setState(() {
-          _myListings = lData['data'] ?? [];
+          if (rawList is List) {
+            _myListings = rawList;
+          } else if (rawList is Map && rawList['data'] is List) {
+            _myListings = rawList['data'];
+          } else {
+            _myListings = [];
+          }
         });
       }
     } catch (e) {
@@ -4332,8 +4346,15 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
+        final dynamic rawList = data['data'];
         setState(() {
-          _listings = data['data'] ?? [];
+          if (rawList is List) {
+            _listings = rawList;
+          } else if (rawList is Map && rawList['data'] is List) {
+            _listings = rawList['data'];
+          } else {
+            _listings = [];
+          }
         });
       }
     } catch (e) {
@@ -5346,8 +5367,15 @@ class _FeaturedListingsScreenState extends State<FeaturedListingsScreen> {
       final res = await http.get(Uri.parse('${AppConfig.baseUrl}/listings?featured=1'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
+        final dynamic rawList = data['data'];
         setState(() {
-          _listings = data['data'] ?? [];
+          if (rawList is List) {
+            _listings = rawList;
+          } else if (rawList is Map && rawList['data'] is List) {
+            _listings = rawList['data'];
+          } else {
+            _listings = [];
+          }
         });
       }
     } catch (e) {
