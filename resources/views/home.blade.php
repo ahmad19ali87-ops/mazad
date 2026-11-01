@@ -105,6 +105,84 @@
     </div>
 </section>
 
+<!-- Sponsored Banners 5-Second Carousel -->
+@if(isset($banners) && $banners->count() > 0)
+<section class="max-w-7xl mx-auto px-4 pt-6 pb-2">
+    <div x-data="{
+        current: 0,
+        total: {{ $banners->count() }},
+        timer: null,
+        startTimer() {
+            this.timer = setInterval(() => {
+                this.next();
+            }, 5000);
+        },
+        stopTimer() {
+            if (this.timer) clearInterval(this.timer);
+        },
+        next() {
+            this.current = (this.current + 1) % this.total;
+        },
+        prev() {
+            this.current = (this.current - 1 + this.total) % this.total;
+        }
+    }" 
+    x-init="startTimer()" 
+    @mouseenter="stopTimer()" 
+    @mouseleave="startTimer()"
+    class="relative rounded-3xl overflow-hidden shadow-md border border-slate-200/80 bg-slate-900 h-44 sm:h-60 md:h-72 select-none">
+        
+        @foreach($banners as $index => $banner)
+            <div x-show="current === {{ $index }}" 
+                 x-transition:enter="transition ease-out duration-700 transform" 
+                 x-transition:enter-start="opacity-0 translate-x-8" 
+                 x-transition:enter-end="opacity-100 translate-x-0" 
+                 x-transition:leave="transition ease-in duration-500 transform" 
+                 x-transition:leave-start="opacity-100 translate-x-0" 
+                 x-transition:leave-end="opacity-0 -translate-x-8" 
+                 class="absolute inset-0 w-full h-full">
+                
+                <a href="{{ $banner->target_url }}" target="{{ $banner->link_type === 'external' ? '_blank' : '_self' }}" class="block w-full h-full relative group">
+                    <img src="{{ $banner->image_url }}" alt="{{ $banner->title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-700">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex flex-col justify-end p-5 sm:p-7">
+                        <div class="max-w-xl text-right">
+                            <span class="inline-block bg-amber-400 text-slate-950 font-black text-[11px] px-3 py-1 rounded-full shadow mb-2">
+                                {{ $banner->badge_text ?? 'إعلان ممول ⭐' }}
+                            </span>
+                            <h3 class="text-lg sm:text-2xl md:text-3xl font-black text-white leading-tight drop-shadow">
+                                {{ $banner->title }}
+                            </h3>
+                            @if($banner->subtitle)
+                                <p class="text-xs sm:text-sm text-slate-200 mt-1 line-clamp-2 drop-shadow">
+                                    {{ $banner->subtitle }}
+                                </p>
+                            @endif
+                        </div>
+                    </div>
+                </a>
+            </div>
+        @endforeach
+
+        <!-- Next / Prev Controls -->
+        <button @click.prevent="prev()" class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
+            <i class="fa-solid fa-chevron-right text-xs"></i>
+        </button>
+        <button @click.prevent="next()" class="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
+            <i class="fa-solid fa-chevron-left text-xs"></i>
+        </button>
+
+        <!-- Dots indicators -->
+        <div class="absolute bottom-3 inset-x-0 flex justify-center gap-1.5 z-20">
+            @foreach($banners as $index => $banner)
+                <button @click="current = {{ $index }}" 
+                        :class="current === {{ $index }} ? 'w-6 bg-amber-400' : 'w-2 bg-white/50'" 
+                        class="h-1.5 rounded-full transition-all duration-300"></button>
+            @endforeach
+        </div>
+    </div>
+</section>
+@endif
+
 <!-- Categories Mini-cards Grid (Mzad Qatar Style) -->
 <section class="max-w-7xl mx-auto px-4 py-10">
     <div class="flex justify-between items-end mb-6">
@@ -190,6 +268,84 @@
         </div>
     </div>
 </section>
+
+<!-- Sponsored Banners 5-Second Carousel -->
+@if(isset($banners) && $banners->count() > 0)
+<section class="max-w-7xl mx-auto px-4 pt-6 pb-2">
+    <div x-data="{
+        current: 0,
+        total: {{ $banners->count() }},
+        timer: null,
+        startTimer() {
+            this.timer = setInterval(() => {
+                this.next();
+            }, 5000);
+        },
+        stopTimer() {
+            if (this.timer) clearInterval(this.timer);
+        },
+        next() {
+            this.current = (this.current + 1) % this.total;
+        },
+        prev() {
+            this.current = (this.current - 1 + this.total) % this.total;
+        }
+    }" 
+    x-init="startTimer()" 
+    @mouseenter="stopTimer()" 
+    @mouseleave="startTimer()"
+    class="relative rounded-3xl overflow-hidden shadow-md border border-slate-200/80 bg-slate-900 h-44 sm:h-60 md:h-72 select-none">
+        
+        @foreach($banners as $index => $banner)
+            <div x-show="current === {{ $index }}" 
+                 x-transition:enter="transition ease-out duration-700 transform" 
+                 x-transition:enter-start="opacity-0 translate-x-8" 
+                 x-transition:enter-end="opacity-100 translate-x-0" 
+                 x-transition:leave="transition ease-in duration-500 transform" 
+                 x-transition:leave-start="opacity-100 translate-x-0" 
+                 x-transition:leave-end="opacity-0 -translate-x-8" 
+                 class="absolute inset-0 w-full h-full">
+                
+                <a href="{{ $banner->target_url }}" target="{{ $banner->link_type === 'external' ? '_blank' : '_self' }}" class="block w-full h-full relative group">
+                    <img src="{{ $banner->image_url }}" alt="{{ $banner->title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-700">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex flex-col justify-end p-5 sm:p-7">
+                        <div class="max-w-xl text-right">
+                            <span class="inline-block bg-amber-400 text-slate-950 font-black text-[11px] px-3 py-1 rounded-full shadow mb-2">
+                                {{ $banner->badge_text ?? 'إعلان ممول ⭐' }}
+                            </span>
+                            <h3 class="text-lg sm:text-2xl md:text-3xl font-black text-white leading-tight drop-shadow">
+                                {{ $banner->title }}
+                            </h3>
+                            @if($banner->subtitle)
+                                <p class="text-xs sm:text-sm text-slate-200 mt-1 line-clamp-2 drop-shadow">
+                                    {{ $banner->subtitle }}
+                                </p>
+                            @endif
+                        </div>
+                    </div>
+                </a>
+            </div>
+        @endforeach
+
+        <!-- Next / Prev Controls -->
+        <button @click.prevent="prev()" class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
+            <i class="fa-solid fa-chevron-right text-xs"></i>
+        </button>
+        <button @click.prevent="next()" class="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
+            <i class="fa-solid fa-chevron-left text-xs"></i>
+        </button>
+
+        <!-- Dots indicators -->
+        <div class="absolute bottom-3 inset-x-0 flex justify-center gap-1.5 z-20">
+            @foreach($banners as $index => $banner)
+                <button @click="current = {{ $index }}" 
+                        :class="current === {{ $index }} ? 'w-6 bg-amber-400' : 'w-2 bg-white/50'" 
+                        class="h-1.5 rounded-full transition-all duration-300"></button>
+            @endforeach
+        </div>
+    </div>
+</section>
+@endif
 @endif
 
 <!-- Latest Listings with New/Used Filter Tabs -->

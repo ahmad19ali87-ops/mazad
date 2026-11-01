@@ -60,9 +60,14 @@ class ListingController extends Controller
             });
         }
 
-        // Listing Type: 'sale' (للبيع) vs 'wanted' (مطلوب للشراء/للتوظيف)
-        if ($request->filled('listing_type') && in_array($request->listing_type, ['sale', 'wanted'])) {
+        // Listing Type: 'sale' vs 'wanted' vs 'rent' vs 'rent_wanted'
+        if ($request->filled('listing_type') && in_array($request->listing_type, ['sale', 'wanted', 'rent', 'rent_wanted'])) {
             $query->where('listing_type', $request->listing_type);
+        }
+
+        // Featured VIP Listings
+        if ($request->boolean('featured') || $request->get('is_featured') == '1') {
+            $query->where('is_featured', true);
         }
 
         // Job Type: 'vacancy' (مطلوب موظف) vs 'seeker' (باحث عن عمل)
@@ -98,7 +103,7 @@ class ListingController extends Controller
             $query->where('currency', $request->currency);
         }
 
-        // Sorting
+        // Sorting (Featured VIP listings take precedence in default latest view)
         $sort = $request->get('sort', 'latest');
         switch ($sort) {
             case 'price_low':
@@ -111,7 +116,7 @@ class ListingController extends Controller
                 $query->orderBy('views_count', 'desc');
                 break;
             default:
-                $query->latest();
+                $query->orderByDesc('is_featured')->latest();
                 break;
         }
 
@@ -206,7 +211,7 @@ class ListingController extends Controller
             'category_id' => 'required|exists:categories,id',
             'subcategory_id' => 'nullable|exists:subcategories,id',
             'condition' => 'required|in:new,used',
-            'listing_type' => 'nullable|in:sale,wanted',
+            'listing_type' => 'nullable|in:sale,wanted,rent,rent_wanted',
             'job_type' => 'nullable|in:vacancy,seeker',
             'price' => 'required|numeric|min:0',
             'currency' => 'required|in:SYP,USD',
@@ -301,7 +306,7 @@ class ListingController extends Controller
             'category_id' => 'required|exists:categories,id',
             'subcategory_id' => 'nullable|exists:subcategories,id',
             'condition' => 'required|in:new,used',
-            'listing_type' => 'nullable|in:sale,wanted',
+            'listing_type' => 'nullable|in:sale,wanted,rent,rent_wanted',
             'job_type' => 'nullable|in:vacancy,seeker',
             'price' => 'required|numeric|min:0',
             'currency' => 'required|in:SYP,USD',
@@ -348,7 +353,7 @@ class ListingController extends Controller
         return redirect()->route('listings.show', $listing->slug)->with('success', 'تم حفظ تعديلات الإعلان بنجاح.');
     }
 
-    public function destroy(int $id): RedirectResponse
+    public function destroy(Request $request, int $id): RedirectResponse
     {
         $listing = Listing::findOrFail($id);
 
@@ -358,7 +363,12 @@ class ListingController extends Controller
 
         $listing->delete();
 
-        return redirect()->route('home')->with('success', 'تم حذف الإعلان بنجاح.');
+        $referer = $request->headers->get('referer', '');
+        if (str_contains($referer, '/listings/' . $listing->slug) || str_contains($referer, '/listings/' . $listing->id)) {
+            return redirect()->route('dashboard')->with('success', 'تم حذف الإعلان بنجاح.');
+        }
+
+        return redirect()->back()->with('success', 'تم حذف الإعلان بنجاح.');
     }
 
     public function toggleFavorite(int $id): RedirectResponse

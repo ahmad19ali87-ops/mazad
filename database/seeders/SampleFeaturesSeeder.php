@@ -227,6 +227,133 @@ class SampleFeaturesSeeder extends Seeder
                 ['is_primary' => true, 'sort_order' => 1]
             );
         }
+
+        // 7. Sample: Real Estate Renting (تأجير: معروض ومطلوب)
+        $realEstateCat = Category::where('slug', 'real-estate')->first();
+        if ($realEstateCat && $damascus) {
+            $rentSubcat = Subcategory::firstOrCreate(
+                ['category_id' => $realEstateCat->id, 'slug' => 'properties-for-rent'],
+                ['name_ar' => 'عقارات للإيجار والتأجير', 'name_en' => 'Properties for Rent', 'icon' => 'key', 'sort_order' => 2]
+            );
+
+            // Offered for rent (معروض للإيجار)
+            $rentListing = Listing::updateOrCreate(
+                ['title' => 'شقة مفروشة سوبر ديلوكس للإيجار السنوي أو السياحي في دمشق - المالكي'],
+                [
+                    'user_id' => $seller->id,
+                    'category_id' => $realEstateCat->id,
+                    'subcategory_id' => $rentSubcat->id,
+                    'slug' => 'deluxe-apartment-for-rent-malki-' . Str::random(4),
+                    'description' => 'شقة 3 غرف نوم وصالون كبير، إطلالة رائعة، تدفئة وتكييف مركزي، مصعد وموقف سيارة خاص، كهرباء 24/24 بالطاقة الشمسية، جاهزة للسكن الفوري بعقد نظامي.',
+                    'price' => 1200,
+                    'currency' => 'USD',
+                    'is_negotiable' => true,
+                    'condition' => 'new',
+                    'listing_type' => 'rent',
+                    'is_sold' => false,
+                    'governorate_id' => $damascus->id,
+                    'region_id' => $damascusRegion?->id,
+                    'district_name' => 'المالكي',
+                    'street_address' => 'قرب السفارة الفرنسية، بناء حديث',
+                    'phone' => '0933112233',
+                    'whatsapp' => '0933112233',
+                    'allow_comments' => true,
+                    'status' => 'active',
+                    'is_featured' => true,
+                    'specs' => [
+                        'المساحة' => '190 متر مربع',
+                        'عدد الغرف' => '3 غرف + صالون واسع',
+                        'نوع الإيجار' => 'سنوي أو سياحي بالدولار',
+                        'الفرش' => 'مفروشة بالكامل أثاث إيطالي فاخر',
+                    ],
+                ]
+            );
+
+            ListingImage::firstOrCreate(
+                ['listing_id' => $rentListing->id, 'image_path' => 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=600&q=80'],
+                ['is_primary' => true, 'sort_order' => 1]
+            );
+
+            // Wanted for rent (مطلوب للاستئجار)
+            Listing::updateOrCreate(
+                ['title' => 'مطلوب شقة أو استديو صغير للاستئجار الشهري في المزة أو كفرسوسة'],
+                [
+                    'user_id' => $normalUser->id,
+                    'category_id' => $realEstateCat->id,
+                    'subcategory_id' => $rentSubcat->id,
+                    'slug' => 'wanted-apartment-for-rent-mazzeh-' . Str::random(4),
+                    'description' => 'مطلوب استئجار شقة مفروشة أو نصف مفروشة لمهندس مقيم، نظيفة وهادئة ويفضل توفر خط طاقة شمسية أو أمبيرات. الدفع مقدماً كل 6 أشهر.',
+                    'price' => 300,
+                    'currency' => 'USD',
+                    'is_negotiable' => true,
+                    'condition' => 'used',
+                    'listing_type' => 'rent_wanted',
+                    'is_sold' => false,
+                    'governorate_id' => $damascus->id,
+                    'region_id' => $damascusRegion?->id,
+                    'district_name' => 'المزة / الفيلات الغربية',
+                    'street_address' => 'قرب أوتوستراد المزة',
+                    'phone' => '0944556677',
+                    'whatsapp' => '0944556677',
+                    'allow_comments' => true,
+                    'status' => 'active',
+                    'is_featured' => false,
+                    'specs' => [
+                        'الطلب' => 'استئجار شقة أو استديو',
+                        'الميزانية المقترحة' => '250 - 350 دولار شهرياً',
+                        'مدة العقد' => 'سنة قابلة للتجديد',
+                    ],
+                ]
+            );
+        }
+
+        // 8. Sample Banners (سلايدرات البنرات الإعلانية والممولة)
+        $sampleListingCar = Listing::where('is_featured', true)->first();
+
+        \App\Models\Banner::updateOrCreate(
+            ['title' => 'سوق السيارات الأكبر في سوريا - معروضات حديثة بأسعار مميزة'],
+            [
+                'subtitle' => 'تصفح أحدث موديلات كيا وتويوتا وهيونداي مع إمكانية الفحص والتفاوض الفوري',
+                'image_path' => 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80',
+                'link_type' => $sampleListingCar ? 'listing' : 'none',
+                'listing_id' => $sampleListingCar?->id,
+                'external_url' => null,
+                'badge_text' => 'إعلان ممول ⭐',
+                'background_color' => '#8b1d30',
+                'is_active' => true,
+                'sort_order' => 1,
+            ]
+        );
+
+        \App\Models\Banner::updateOrCreate(
+            ['title' => 'تطبيق مزاد سوريا للجوال - أسرع طريقة للبيع والشراء'],
+            [
+                'subtitle' => 'حمّل التطبيق الآن واستقبل إشعارات فورية بكل سلعة وفرصة عمل جديدة في منطقتك',
+                'image_path' => 'https://images.unsplash.com/photo-1555529771-835f59fc5efe?auto=format&fit=crop&w=1200&q=80',
+                'link_type' => 'external',
+                'listing_id' => null,
+                'external_url' => 'https://mazad.sy/app',
+                'badge_text' => 'تطبيق الجوال 📱',
+                'background_color' => '#0f172a',
+                'is_active' => true,
+                'sort_order' => 2,
+            ]
+        );
+
+        \App\Models\Banner::updateOrCreate(
+            ['title' => 'عقارات وفلل وشقق سياحية للإيجار والبيع في دمشق'],
+            [
+                'subtitle' => 'اختر سكنك المثالي، شقق مفروشة وفلل ومكاتب تجارية بعقود رسمية موثقة',
+                'image_path' => 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+                'link_type' => 'none',
+                'listing_id' => null,
+                'external_url' => null,
+                'badge_text' => 'عروض عقارية حصرية 🏡',
+                'background_color' => '#1e3a8a',
+                'is_active' => true,
+                'sort_order' => 3,
+            ]
+        );
     }
 }
 

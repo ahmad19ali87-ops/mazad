@@ -123,6 +123,31 @@ class Listing extends Model
         return $this->belongsToMany(User::class, 'saved_listings')->withTimestamps();
     }
 
+    public function banners(): HasMany
+    {
+        return $this->hasMany(Banner::class);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function scopeFeatured($query)
+    {
+        return $query->where('is_featured', true);
+    }
+
+    public function getListingTypeLabelAttribute(): string
+    {
+        return match ($this->listing_type) {
+            'wanted' => 'مطلوب للشراء',
+            'rent' => 'معروض للإيجار',
+            'rent_wanted' => 'مطلوب للاستئجار',
+            default => 'معروض للبيع',
+        };
+    }
+
     public function getFormattedPriceAttribute(): string
     {
         $symbol = $this->currency === 'USD' ? '$' : 'ل.س';

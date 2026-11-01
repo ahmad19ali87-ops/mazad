@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Governorate;
 use App\Models\Listing;
@@ -40,6 +41,9 @@ class HomeController extends Controller
             ->orderBy('sort_order')
             ->get();
 
+        // Active Featured Banners (سلايدرات البنرات الإعلانية)
+        $banners = Banner::active()->with('listing.category')->take(6)->get();
+
         // Stats
         $counts = [
             'total' => Listing::where('status', 'active')->count(),
@@ -48,7 +52,7 @@ class HomeController extends Controller
             'sellers' => User::where('role', 'seller')->count(),
         ];
 
-        return view('home', compact('categories', 'featuredListings', 'latestListings', 'governorates', 'counts'));
+        return view('home', compact('categories', 'featuredListings', 'latestListings', 'governorates', 'counts', 'banners'));
     }
 }
 

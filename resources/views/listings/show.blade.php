@@ -24,6 +24,55 @@
 </div>
 
 <div class="max-w-7xl mx-auto px-4 py-8">
+
+    @auth
+        @if(auth()->id() === $listing->user_id || auth()->user()->isAdmin())
+            <div class="bg-gradient-to-r from-slate-900 via-brand-800 to-slate-900 text-white rounded-2xl p-4 sm:p-5 mb-6 border border-slate-700 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-black text-sm">لوحة إدارة السلعة (أنت صاحب هذا الإعلان)</h3>
+                        <p class="text-[11px] text-slate-300">
+                            الحالة الحالية: 
+                            <strong class="{{ $listing->is_sold ? 'text-amber-300' : 'text-emerald-400' }}">
+                                {{ $listing->is_sold ? 'تم البيع' : 'نشط ومعروض للبيع' }}
+                            </strong>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 self-stretch sm:self-auto justify-end">
+                    <!-- Toggle Sold Status Form -->
+                    <form action="{{ route('listings.sold', $listing->id) }}" method="POST">
+                        @csrf
+                        <button type="submit" class="text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow {{ $listing->is_sold ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-amber-400 hover:bg-amber-500 text-slate-950' }}">
+                            <i class="fa-solid fa-check-circle"></i>
+                            <span>{{ $listing->is_sold ? 'إعادة العرض في السوق' : 'تمييز كـ "تم البيع"' }}</span>
+                        </button>
+                    </form>
+
+                    <!-- Edit Listing Link -->
+                    <a href="{{ route('listings.edit', $listing->id) }}" class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>تعديل الإعلان</span>
+                    </a>
+
+                    <!-- Delete Listing Form -->
+                    <form action="{{ route('listings.destroy', $listing->id) }}" method="POST" onsubmit="return confirm('هل أنت متأكد من حذف هذا الإعلان نهائياً؟ لا يمكن التراجع.');">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-trash-can"></i>
+                            <span>حذف</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        @endif
+    @endauth
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         <!-- Left 2 Cols: Gallery, Details, Specs, Comments -->

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminAppearanceController;
+use App\Http\Controllers\Admin\AdminBannerController;
 use App\Http\Controllers\Admin\AdminCategoryController;
 use App\Http\Controllers\Admin\AdminCommentController;
 use App\Http\Controllers\Admin\AdminDashboardController;
@@ -39,6 +40,16 @@ Route::get('/wanted', function (Request $request, ListingController $controller)
     $request->merge(['listing_type' => 'wanted']);
     return $controller->index($request);
 })->name('wanted.index');
+
+Route::get('/rent', function (Request $request, ListingController $controller) {
+    $request->merge(['listing_type' => 'rent']);
+    return $controller->index($request);
+})->name('rent.index');
+
+Route::get('/featured', function (Request $request, ListingController $controller) {
+    $request->merge(['featured' => 1]);
+    return $controller->index($request);
+})->name('featured.index');
 
 // Public Listings & Direct Category Routes
 Route::get('/listings', [ListingController::class, 'index'])->name('listings.index');
@@ -87,6 +98,13 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->name('admin.')->group(fun
     // Appearance & Theme Management (إدارة الواجهة والمظهر للموقع والتطبيق)
     Route::get('/appearance', [AdminAppearanceController::class, 'index'])->name('appearance.index');
     Route::post('/appearance', [AdminAppearanceController::class, 'update'])->name('appearance.update');
+
+    // Banners & Sponsored Ads (إدارة البنرات الإعلانية والممولة)
+    Route::get('/banners', [AdminBannerController::class, 'index'])->name('banners.index');
+    Route::post('/banners', [AdminBannerController::class, 'store'])->name('banners.store');
+    Route::put('/banners/{id}', [AdminBannerController::class, 'update'])->name('banners.update');
+    Route::post('/banners/{id}/toggle', [AdminBannerController::class, 'toggleActive'])->name('banners.toggle');
+    Route::delete('/banners/{id}', [AdminBannerController::class, 'destroy'])->name('banners.destroy');
 
     // Security & WAF Defense (لوحة مراقبة النظام من الهجمات وصد هجمات تلقائي وحظر IP)
     Route::get('/security', [AdminSecurityController::class, 'index'])->name('security.index');

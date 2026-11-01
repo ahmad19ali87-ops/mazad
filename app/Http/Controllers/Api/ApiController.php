@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Comment;
 use App\Models\Follow;
 use App\Models\Governorate;
 use App\Models\InAppNotification;
 use App\Models\Listing;
+use App\Models\ListingImage;
 use App\Models\SiteSetting;
 use App\Models\User;
 use App\Services\ListingService;
@@ -103,6 +105,21 @@ class ApiController extends Controller
         return response()->json(['success' => true, 'user' => $user]);
     }
 
+    // Active Sponsored & Promotional Banners
+    public function banners(): JsonResponse
+    {
+        $banners = Banner::active()
+            ->with(['listing' => function ($q) {
+                $q->select('id', 'title', 'slug', 'price', 'currency', 'status');
+            }])
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $banners,
+        ]);
+    }
+
     // Categories and Subcategories
     public function categories(): JsonResponse
     {
@@ -140,6 +157,17 @@ class ApiController extends Controller
             $query->where('category_id', $request->category_id);
         }
 
+        if ($request->filled('category')) {
+            $catVal = $request->category;
+            $query->whereHas('category', function ($q) use ($catVal) {
+                if (is_numeric($catVal)) {
+                    $q->where('id', (int)$catVal);
+                } else {
+                    $q->where('slug', $catVal);
+                }
+            });
+        }
+
         if ($request->filled('subcategory_id')) {
             $query->where('subcategory_id', $request->subcategory_id);
         }
@@ -149,9 +177,14 @@ class ApiController extends Controller
             $query->where('condition', $request->condition);
         }
 
-        // Listing Type: 'sale' (معروض للبيع) vs 'wanted' (مطلوب للشراء/للتوظيف)
-        if ($request->filled('listing_type') && in_array($request->listing_type, ['sale', 'wanted'])) {
+        // Listing Type: 'sale' vs 'wanted' vs 'rent' vs 'rent_wanted'
+        if ($request->filled('listing_type') && in_array($request->listing_type, ['sale', 'wanted', 'rent', 'rent_wanted'])) {
             $query->where('listing_type', $request->listing_type);
+        }
+
+        // Featured VIP Listings
+        if ($request->boolean('featured') || $request->get('is_featured') == '1') {
+            $query->where('is_featured', true);
         }
 
         // Job Type: 'vacancy' (مطلوب موظف) vs 'seeker' (باحث عن عمل)
@@ -196,7 +229,7 @@ class ApiController extends Controller
         } elseif ($sort === 'popular') {
             $query->orderBy('views_count', 'desc');
         } else {
-            $query->latest();
+            $query->orderByDesc('is_featured')->latest();
         }
 
         $perPage = min((int)$request->get('per_page', 15), 50);
@@ -239,14 +272,17 @@ class ApiController extends Controller
         $listing->timestamps = true;
 
         $isFollowing = false;
+        $isFavorited = false;
         if ($request->user('sanctum')) {
             $isFollowing = $request->user('sanctum')->isFollowing($listing->user_id);
+            $isFavorited = $request->user('sanctum')->savedListings()->where('listing_id', $listing->id)->exists();
         }
 
         return response()->json([
             'success' => true,
             'data' => $listing,
             'is_following_seller' => $isFollowing,
+            'is_favorited' => $isFavorited,
         ]);
     }
 
@@ -260,7 +296,7 @@ class ApiController extends Controller
             'category_id' => 'required|exists:categories,id',
             'subcategory_id' => 'nullable|exists:subcategories,id',
             'condition' => 'required|in:new,used',
-            'listing_type' => 'nullable|in:sale,wanted',
+            'listing_type' => 'nullable|in:sale,wanted,rent,rent_wanted',
             'job_type' => 'nullable|in:vacancy,seeker',
             'price' => 'required|numeric|min:0',
             'currency' => 'required|in:SYP,USD',
@@ -287,6 +323,77 @@ class ApiController extends Controller
             'message' => 'تم نشر الإعلان بنجاح وتم إشعار المتابعين',
             'data' => $listing->load(['images', 'category', 'governorate']),
         ], 201);
+    }
+
+    // Update listing via API
+    public function updateListing(Request $request, int $id): JsonResponse
+    {
+        $listing = Listing::findOrFail($id);
+        $user = $request->user();
+
+        if ($user->id !== $listing->user_id && !$user->isAdmin()) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح لك بتعديل هذا الإعلان'], 403);
+        }
+
+        $validated = $request->validate([
+            'title' => 'required|string|min:5|max:190',
+            'category_id' => 'required|exists:categories,id',
+            'subcategory_id' => 'nullable|exists:subcategories,id',
+            'condition' => 'required|in:new,used',
+            'listing_type' => 'nullable|in:sale,wanted,rent,rent_wanted',
+            'job_type' => 'nullable|in:vacancy,seeker',
+            'price' => 'required|numeric|min:0',
+            'currency' => 'required|in:SYP,USD',
+            'is_negotiable' => 'nullable|boolean',
+            'description' => 'required|string|min:15',
+            'governorate_id' => 'required|exists:governorates,id',
+            'region_id' => 'nullable|exists:regions,id',
+            'district_id' => 'nullable|exists:districts,id',
+            'district_name' => 'nullable|string|max:100',
+            'street_address' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:30',
+            'whatsapp' => 'nullable|string|max:30',
+            'allow_comments' => 'nullable|boolean',
+            'status' => 'nullable|in:active,sold,pending',
+            'specs' => 'nullable|array',
+            'images' => 'nullable|array|max:10',
+            'images.*' => 'nullable',
+            'delete_image_ids' => 'nullable|array',
+            'delete_image_ids.*' => 'integer',
+        ]);
+
+        if (!empty($validated['delete_image_ids'])) {
+            ListingImage::where('listing_id', $listing->id)
+                ->whereIn('id', $validated['delete_image_ids'])
+                ->delete();
+        }
+
+        $images = $request->file('images', []);
+        $updatedListing = $this->listingService->updateListing($listing, $validated, $images);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم حفظ تعديلات الإعلان بنجاح',
+            'data' => $updatedListing->load(['images', 'category', 'governorate']),
+        ]);
+    }
+
+    // Delete listing via API
+    public function destroyListing(Request $request, int $id): JsonResponse
+    {
+        $listing = Listing::findOrFail($id);
+        $user = $request->user();
+
+        if ($user->id !== $listing->user_id && !$user->isAdmin()) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح بحذف هذا الإعلان'], 403);
+        }
+
+        $listing->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم حذف الإعلان بنجاح',
+        ]);
     }
 
     // Add Comment on Listing
@@ -470,6 +577,49 @@ class ApiController extends Controller
             'is_sold' => $listing->is_sold,
             'status' => $listing->status,
             'message' => $listing->is_sold ? 'تم تمييز السلعة كـ "تم البيع"' : 'تمت إعادة عرض السلعة',
+        ]);
+    }
+
+    // Toggle Favorite status
+    public function toggleFavorite(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $listing = Listing::findOrFail($id);
+
+        if ($user->savedListings()->where('listing_id', $listing->id)->exists()) {
+            $user->savedListings()->detach($listing->id);
+            $isFavorited = false;
+            $msg = 'تمت إزالة السلعة من المفضلة';
+        } else {
+            $user->savedListings()->attach($listing->id);
+            $isFavorited = true;
+            $msg = 'تمت إضافة السلعة إلى المفضلة';
+        }
+
+        return response()->json([
+            'success' => true,
+            'is_favorited' => $isFavorited,
+            'message' => $msg,
+        ]);
+    }
+
+    // List User Favorites
+    public function favorites(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $favorites = $user->savedListings()
+            ->with(['category', 'governorate', 'images', 'user'])
+            ->latest()
+            ->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $favorites->items(),
+            'pagination' => [
+                'current_page' => $favorites->currentPage(),
+                'last_page' => $favorites->lastPage(),
+                'total' => $favorites->total(),
+            ],
         ]);
     }
 

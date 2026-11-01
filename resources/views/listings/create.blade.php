@@ -46,24 +46,44 @@
                     <!-- Listing Type: Sale vs Wanted -->
                     <div class="md:col-span-2 bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
                         <label class="block text-xs font-black text-slate-900 mb-2">نوع الإعلان والغرض <span class="text-red-500">*</span></label>
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                             <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-emerald-500 transition">
                                 <input type="radio" name="listing_type" value="sale" {{ old('listing_type', 'sale') === 'sale' ? 'checked' : '' }} class="text-emerald-600 focus:ring-emerald-500" required>
-                                <div class="mr-3">
-                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-tag text-emerald-600"></i> معروض للبيع أو التقديم
+                                <div class="mr-2.5">
+                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1">
+                                        <i class="fa-solid fa-tag text-emerald-600"></i> معروض للبيع
                                     </span>
-                                    <span class="block text-[10px] text-slate-500">لديك سلعة أو خدمة وتريد بيعها</span>
+                                    <span class="block text-[10px] text-slate-500">سلعة للبيع الفوري</span>
                                 </div>
                             </label>
 
                             <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-amber-500 transition">
                                 <input type="radio" name="listing_type" value="wanted" {{ old('listing_type') === 'wanted' ? 'checked' : '' }} class="text-amber-600 focus:ring-amber-500">
-                                <div class="mr-3">
-                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-hand-holding-dollar text-amber-600"></i> مطلوب للشراء / إعلان طلب
+                                <div class="mr-2.5">
+                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1">
+                                        <i class="fa-solid fa-hand-holding-dollar text-amber-600"></i> مطلوب للشراء
                                     </span>
-                                    <span class="block text-[10px] text-slate-500">تبحث عن سلعة، سيارة، شقة، أو عامل لتوظيفه</span>
+                                    <span class="block text-[10px] text-slate-500">تبحث عن سلعة للشراء</span>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-blue-500 transition">
+                                <input type="radio" name="listing_type" value="rent" {{ old('listing_type') === 'rent' ? 'checked' : '' }} class="text-blue-600 focus:ring-blue-500">
+                                <div class="mr-2.5">
+                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1">
+                                        <i class="fa-solid fa-key text-blue-600"></i> معروض للإيجار
+                                    </span>
+                                    <span class="block text-[10px] text-slate-500">شقة، محل، سيارة للإيجار</span>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-purple-500 transition">
+                                <input type="radio" name="listing_type" value="rent_wanted" {{ old('listing_type') === 'rent_wanted' ? 'checked' : '' }} class="text-purple-600 focus:ring-purple-500">
+                                <div class="mr-2.5">
+                                    <span class="block text-xs font-bold text-slate-900 flex items-center gap-1">
+                                        <i class="fa-solid fa-house-chimney-user text-purple-600"></i> مطلوب للاستئجار
+                                    </span>
+                                    <span class="block text-[10px] text-slate-500">طلب استئجار عقار أو سيارة</span>
                                 </div>
                             </label>
                         </div>
@@ -343,28 +363,52 @@
             });
     });
 
-    // Images preview
+    // Interactive Images preview with 'X' remove button
     const imagesInput = document.getElementById('imagesInput');
     const imagesPreview = document.getElementById('imagesPreview');
+    let selectedFiles = [];
 
     imagesInput.addEventListener('change', function() {
-        imagesPreview.innerHTML = '';
         if (this.files) {
-            Array.from(this.files).forEach((file, index) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const div = document.createElement('div');
-                    div.className = 'w-20 h-20 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-100 shadow-sm';
-                    div.innerHTML = `
-                        <img src="${e.target.result}" class="w-full h-full object-cover">
-                        ${index === 0 ? '<span class="absolute bottom-0 inset-x-0 bg-brand-500 text-white text-[9px] text-center font-bold">الرئيسية</span>' : ''}
-                    `;
-                    imagesPreview.appendChild(div);
-                };
-                reader.readAsDataURL(file);
+            Array.from(this.files).forEach(file => {
+                if (selectedFiles.length < 10) {
+                    selectedFiles.push(file);
+                }
             });
+            updateInputAndPreview();
         }
     });
+
+    function updateInputAndPreview() {
+        const dt = new DataTransfer();
+        selectedFiles.forEach(file => dt.items.add(file));
+        imagesInput.files = dt.files;
+
+        imagesPreview.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement('div');
+                div.className = 'w-24 h-24 rounded-2xl overflow-hidden border-2 border-slate-200 relative bg-slate-100 shadow-sm group';
+                div.innerHTML = `
+                    <img src="${e.target.result}" class="w-full h-full object-cover">
+                    ${index === 0 ? '<span class="absolute bottom-0 inset-x-0 bg-brand-500 text-white text-[9px] text-center font-bold py-0.5">الرئيسية</span>' : ''}
+                    <button type="button" onclick="removeImage(${index})" 
+                            class="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-xs shadow-md transition" 
+                            title="إزالة هذه الصورة">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                `;
+                imagesPreview.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    window.removeImage = function(index) {
+        selectedFiles.splice(index, 1);
+        updateInputAndPreview();
+    };
 
     // Add more specs rows
     document.getElementById('addSpecBtn').addEventListener('click', function() {

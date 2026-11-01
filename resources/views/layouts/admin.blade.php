@@ -64,6 +64,10 @@
                 <a href="{{ route('admin.comments.index') }}" class="px-3 py-1.5 rounded-lg {{ request()->routeIs('admin.comments.*') ? 'bg-brand-500 text-white' : 'text-slate-300 hover:bg-slate-800' }}">
                     التعليقات
                 </a>
+                <a href="{{ route('admin.banners.index') }}" class="px-3 py-1.5 rounded-lg {{ request()->routeIs('admin.banners.*') ? 'bg-brand-500 text-white' : 'text-amber-400 hover:bg-slate-800' }} flex items-center gap-1.5">
+                    <i class="fa-solid fa-rectangle-ad"></i>
+                    <span>البنرات والسلايدر</span>
+                </a>
                 <a href="{{ route('admin.security.index') }}" class="px-3 py-1.5 rounded-lg {{ request()->routeIs('admin.security.*') ? 'bg-rose-700 text-white' : 'text-rose-400 hover:bg-slate-800' }} flex items-center gap-1.5">
                     <i class="fa-solid fa-shield-halved"></i>
                     <span>درع الأمان والهجمات</span>

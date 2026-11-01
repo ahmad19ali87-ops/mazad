@@ -114,3 +114,4 @@ class HostingerSetupCommand extends Command
         return Command::SUCCESS;
     }
 }
+

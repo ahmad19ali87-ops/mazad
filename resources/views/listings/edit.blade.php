@@ -32,6 +32,44 @@
                     <input type="text" name="title" value="{{ old('title', $listing->title) }}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none" required>
                 </div>
 
+                <!-- Listing Type -->
+                <div class="md:col-span-2 bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                    <label class="block text-xs font-black text-slate-900 mb-2">نوع الإعلان والغرض <span class="text-red-500">*</span></label>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-emerald-500 transition">
+                            <input type="radio" name="listing_type" value="sale" {{ old('listing_type', $listing->listing_type) === 'sale' ? 'checked' : '' }} class="text-emerald-600 focus:ring-emerald-500">
+                            <div class="mr-2">
+                                <span class="block text-xs font-bold text-slate-900">معروض للبيع</span>
+                                <span class="block text-[10px] text-slate-500">بيع فوري</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-amber-500 transition">
+                            <input type="radio" name="listing_type" value="wanted" {{ old('listing_type', $listing->listing_type) === 'wanted' ? 'checked' : '' }} class="text-amber-600 focus:ring-amber-500">
+                            <div class="mr-2">
+                                <span class="block text-xs font-bold text-slate-900">مطلوب للشراء</span>
+                                <span class="block text-[10px] text-slate-500">طلب شراء</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-blue-500 transition">
+                            <input type="radio" name="listing_type" value="rent" {{ old('listing_type', $listing->listing_type) === 'rent' ? 'checked' : '' }} class="text-blue-600 focus:ring-blue-500">
+                            <div class="mr-2">
+                                <span class="block text-xs font-bold text-slate-900">معروض للإيجار</span>
+                                <span class="block text-[10px] text-slate-500">تأجير عقار/سيارة</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-purple-500 transition">
+                            <input type="radio" name="listing_type" value="rent_wanted" {{ old('listing_type', $listing->listing_type) === 'rent_wanted' ? 'checked' : '' }} class="text-purple-600 focus:ring-purple-500">
+                            <div class="mr-2">
+                                <span class="block text-xs font-bold text-slate-900">مطلوب للاستئجار</span>
+                                <span class="block text-[10px] text-slate-500">طلب استئجار</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Category -->
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">القسم الرئيسي</label>
@@ -117,10 +155,31 @@
                     <textarea name="description" rows="5" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none" required>{{ old('description', $listing->description) }}</textarea>
                 </div>
 
+                <!-- Existing Images -->
+                @if($listing->images->count() > 0)
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-slate-700 mb-2">الصور الحالية للسلعة</label>
+                        <div class="flex flex-wrap gap-3">
+                            @foreach($listing->images as $img)
+                                <div class="w-20 h-20 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-100 shadow-sm">
+                                    <img src="{{ $img->url }}" class="w-full h-full object-cover">
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 <!-- Additional Images -->
                 <div class="md:col-span-2">
-                    <label class="block text-xs font-bold text-slate-700 mb-1">إضافة صور جديدة (اختياري)</label>
-                    <input type="file" name="images[]" multiple accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100">
+                    <label class="block text-xs font-bold text-slate-700 mb-1">إضافة صور جديدة (يمكنك حذف أي صورة قبل الحفظ بالضغط على زر X)</label>
+                    <div class="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-2xl p-4 text-center transition bg-slate-50/50">
+                        <input type="file" name="images[]" id="editImagesInput" multiple accept="image/jpeg,image/png,image/webp" class="hidden">
+                        <label for="editImagesInput" class="cursor-pointer block">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-brand-500 mb-1"></i>
+                            <p class="text-xs font-bold text-slate-800">اضغط لاختيار صور إضافية</p>
+                        </label>
+                        <div id="editImagesPreview" class="flex flex-wrap gap-2 mt-3 justify-center"></div>
+                    </div>
                 </div>
             </div>
 
@@ -135,6 +194,55 @@
         </form>
     </div>
 </div>
+
+@push('scripts')
+<script>
+    const editImagesInput = document.getElementById('editImagesInput');
+    const editImagesPreview = document.getElementById('editImagesPreview');
+    let editSelectedFiles = [];
+
+    editImagesInput.addEventListener('change', function() {
+        if (this.files) {
+            Array.from(this.files).forEach(file => {
+                if (editSelectedFiles.length < 10) {
+                    editSelectedFiles.push(file);
+                }
+            });
+            updateEditPreview();
+        }
+    });
+
+    function updateEditPreview() {
+        const dt = new DataTransfer();
+        editSelectedFiles.forEach(file => dt.items.add(file));
+        editImagesInput.files = dt.files;
+
+        editImagesPreview.innerHTML = '';
+        editSelectedFiles.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement('div');
+                div.className = 'w-20 h-20 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-100 shadow-sm';
+                div.innerHTML = `
+                    <img src="${e.target.result}" class="w-full h-full object-cover">
+                    <button type="button" onclick="removeEditImage(${index})" 
+                            class="absolute top-1 left-1 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-[10px] shadow transition" 
+                            title="إزالة هذه الصورة">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                `;
+                editImagesPreview.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    window.removeEditImage = function(index) {
+        editSelectedFiles.splice(index, 1);
+        updateEditPreview();
+    };
+</script>
+@endpush
 
 @endsection
 
