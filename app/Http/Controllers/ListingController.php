@@ -152,7 +152,7 @@ class ListingController extends Controller
         return $this->index($request);
     }
 
-    public function show(string $slug): View
+    public function show(string $slug): View|RedirectResponse
     {
         $listing = Listing::with([
             'category',
@@ -165,8 +165,22 @@ class ListingController extends Controller
             'comments.user',
             'comments.replies.user',
         ])
-            ->where('slug', $slug)
+            ->where(function ($q) use ($slug) {
+                $q->where('slug', $slug);
+                if (is_numeric($slug)) {
+                    $q->orWhere('id', (int)$slug);
+                }
+            })
             ->firstOrFail();
+
+        // If not active, allow only author or admin to preview
+        if ($listing->status !== 'active') {
+            $isOwnerOrAdmin = Auth::check() && (Auth::id() === $listing->user_id || Auth::user()->isAdmin());
+            if (!$isOwnerOrAdmin) {
+                return redirect()->route('home')
+                    ->with('info', 'هذا الإعلان قيد المراجعة والتدقيق حالياً من قبل إدارة الموقع وسيتاح للجمهور قريباً.');
+            }
+        }
 
         // Increment views count safely without modifying updated_at
         $listing->timestamps = false;
@@ -274,6 +288,11 @@ class ListingController extends Controller
 
         $images = $request->file('images', []);
         $listing = $this->listingService->createListing(Auth::user(), $validated, $images);
+
+        if ($listing->status === 'pending') {
+            return redirect()->route('dashboard')
+                ->with('info', 'تم استلام إعلانك بنجاح! الإعلان قيد المراجعة والتدقيق من قبل إدارة الموقع وسيتم نشره فور اعتماده.');
+        }
 
         return redirect()->route('listings.show', $listing->slug)
             ->with('success', 'تم نشر إعلانك بنجاح! تم إشعار المتابعين أيضاً.');

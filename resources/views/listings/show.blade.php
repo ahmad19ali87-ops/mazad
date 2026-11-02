@@ -25,6 +25,32 @@
 
 <div class="max-w-7xl mx-auto px-4 py-8">
 
+    <!-- Pending or Rejected Banner Alert -->
+    @if($listing->status === 'pending')
+        <div class="bg-amber-500/15 border-r-4 border-amber-500 text-amber-950 p-4 rounded-2xl mb-6 flex items-center justify-between shadow-sm">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-lg flex-shrink-0 animate-pulse">
+                    <i class="fa-solid fa-hourglass-half"></i>
+                </div>
+                <div>
+                    <h4 class="font-black text-sm">هذا الإعلان قيد المراجعة والتدقيق الإداري ⏳</h4>
+                    <p class="text-xs text-slate-700 mt-0.5">الإعلان ظاهر لك ولإدارة الموقع فقط حالياً، وسيتم نشره للجمهور فور موافقة الإدارة عليه.</p>
+                </div>
+            </div>
+            <span class="bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-full shadow-sm">قيد التدقيق</span>
+        </div>
+    @elseif(in_array($listing->status, ['rejected', 'hidden']))
+        <div class="bg-rose-500/15 border-r-4 border-rose-500 text-rose-950 p-4 rounded-2xl mb-6 flex items-center gap-3 shadow-sm">
+            <div class="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <h4 class="font-black text-sm">تم إخفاء أو رفض هذا الإعلان من قبل إدارة الموقع</h4>
+                <p class="text-xs text-slate-700 mt-0.5">يرجى تعديل محتوى الإعلان بما يتوافق مع شروط وسياسة النشر ليتم إعادة اعتماده.</p>
+            </div>
+        </div>
+    @endif
+
     @auth
         @if(auth()->id() === $listing->user_id || auth()->user()->isAdmin())
             <div class="bg-gradient-to-r from-slate-900 via-brand-800 to-slate-900 text-white rounded-2xl p-4 sm:p-5 mb-6 border border-slate-700 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -222,6 +248,13 @@
                                     <span>{{ $isFavorited ? 'محفوظ في المفضلة' : 'حفظ السلعة' }}</span>
                                 </button>
                             </form>
+
+                            <!-- Share Listing Button -->
+                            <button type="button" onclick="shareListing('{{ addslashes($listing->title) }}', '{{ url()->current() }}')" 
+                                    class="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-bold text-slate-700 transition">
+                                <i class="fa-solid fa-share-nodes text-brand-500"></i>
+                                <span>مشاركة الإعلان</span>
+                            </button>
                         </div>
 
                         @auth
@@ -460,6 +493,26 @@
         </div>
     </div>
 </div>
+
+@push('scripts')
+<script>
+function shareListing(title, url) {
+    if (navigator.share) {
+        navigator.share({
+            title: title,
+            text: 'شاهد هذا الإعلان على منصة مزاد سوريا: ' + title,
+            url: url
+        }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            alert('تم نسخ رابط الإعلان بنجاح إلى الحافظة! يمكنك الآن مشاركته في أي تطبيق.');
+        }).catch(() => {
+            prompt('انسخ رابط الإعلان لمشاركته:', url);
+        });
+    }
+}
+</script>
+@endpush
 
 @endsection
 

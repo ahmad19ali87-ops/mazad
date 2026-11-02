@@ -318,9 +318,13 @@ class ApiController extends Controller
         $images = $request->file('images', []);
         $listing = $this->listingService->createListing($user, $validated, $images);
 
+        $msg = $listing->status === 'pending'
+            ? 'تم إرسال إعلانك بنجاح وهو قيد المراجعة من قبل الإدارة وسيتم نشره فور اعتماده.'
+            : 'تم نشر الإعلان بنجاح وتم إشعار المتابعين';
+
         return response()->json([
             'success' => true,
-            'message' => 'تم نشر الإعلان بنجاح وتم إشعار المتابعين',
+            'message' => $msg,
             'data' => $listing->load(['images', 'category', 'governorate']),
         ], 201);
     }

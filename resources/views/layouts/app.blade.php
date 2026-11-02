@@ -4,12 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'مزad سوريا | منصة المزادات وسوق بيع وشراء السلع الجديدة والمستعملة')</title>
+    <title>@yield('title', \App\Models\SiteSetting::get('site_name', 'مزاد سوريا') . ' | ' . \App\Models\SiteSetting::get('site_slogan', 'سوق بيع وشراء السلع الجديدة والمستعملة في سوريا'))</title>
+
+    <!-- Browser Favicon -->
+    @php
+        $faviconPath = \App\Models\SiteSetting::get('site_favicon');
+    @endphp
+    @if($faviconPath)
+        <link rel="icon" href="{{ Storage::disk('public')->url($faviconPath) }}">
+    @else
+        <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    @endif
 
     <!-- Google Fonts: Cairo & Tajawal -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+    <!-- Alpine.js Core -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
 
     <!-- Tailwind CSS CDN with RTL support -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -68,10 +81,21 @@
     <!-- Top Utility Bar -->
     <div class="bg-slate-900 text-slate-300 text-xs py-2 px-4 border-b border-slate-800">
         <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-2">
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
                 <span><i class="fa-solid fa-clock ml-1 text-amber-400"></i> سوق وسلع كافة المحافظات السورية</span>
                 <span class="hidden sm:inline-block">|</span>
-                <span class="hidden sm:inline-block"><i class="fa-solid fa-shield-halved ml-1 text-emerald-400"></i> إعلانات موثوقة ومفحوصة</span>
+                <!-- Mobile App Download Badges -->
+                <div class="inline-flex items-center gap-2">
+                    <a href="{{ route('download.android') }}" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-0.5 rounded-full text-[11px] font-bold shadow-sm transition">
+                        <i class="fa-brands fa-android text-xs"></i>
+                        <span>تطبيق أندرويد (APK)</span>
+                    </a>
+                    <span class="inline-flex items-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-0.5 rounded-full text-[11px] font-medium">
+                        <i class="fa-brands fa-apple text-xs text-slate-400"></i>
+                        <span>الآيفون</span>
+                        <span class="bg-amber-400/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-bold">قريباً</span>
+                    </span>
+                </div>
             </div>
             <div class="flex items-center gap-4">
                 <a href="{{ route('listings.index', ['condition' => 'new']) }}" class="hover:text-amber-400 transition">
@@ -105,14 +129,23 @@
         <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
             
             <!-- Logo -->
+            @php
+                $siteLogo = \App\Models\SiteSetting::get('site_logo');
+                $siteName = \App\Models\SiteSetting::get('site_name', 'مزاد سوريا');
+                $siteSlogan = \App\Models\SiteSetting::get('site_slogan', 'السوق السوري المفتوح لكافة السلع');
+            @endphp
             <a href="{{ route('home') }}" class="flex items-center gap-2.5 flex-shrink-0 group">
-                <div class="w-11 h-11 rounded-xl mzad-gradient flex items-center justify-center text-white shadow-md group-hover:scale-105 transition">
-                    <i class="fa-solid fa-gavel text-xl text-amber-400"></i>
-                </div>
-                <div>
-                    <span class="text-2xl font-black tracking-tight text-slate-900 group-hover:text-brand-600 transition">مزاد <span class="text-brand-500 font-extrabold">سوريا</span></span>
-                    <span class="block text-[10px] text-slate-600 font-semibold leading-none">السوق السوري المفتوح لكافة السلع</span>
-                </div>
+                @if($siteLogo)
+                    <img src="{{ Storage::disk('public')->url($siteLogo) }}" alt="{{ $siteName }}" class="h-11 max-w-[200px] object-contain group-hover:scale-105 transition">
+                @else
+                    <div class="w-11 h-11 rounded-xl mzad-gradient flex items-center justify-center text-white shadow-md group-hover:scale-105 transition">
+                        <i class="fa-solid fa-gavel text-xl text-amber-400"></i>
+                    </div>
+                    <div>
+                        <span class="text-2xl font-black tracking-tight text-slate-900 group-hover:text-brand-600 transition">{{ $siteName }}</span>
+                        <span class="block text-[10px] text-slate-600 font-semibold leading-none">{{ $siteSlogan }}</span>
+                    </div>
+                @endif
             </a>
 
             <!-- Search Bar -->
@@ -277,20 +310,46 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10 border-b border-slate-800 text-sm">
                 <!-- Col 1: About -->
                 <div>
+                    @php
+                        $footerLogo = \App\Models\SiteSetting::get('site_logo');
+                        $footerSiteName = \App\Models\SiteSetting::get('site_name', 'مزاد سوريا');
+                        $footerDesc = \App\Models\SiteSetting::get('footer_description', 'المنصة الأولى المفتوحة لعرض وبيع وشراء كافة البضائع والسلع الجديدة والمستعملة في جميع المحافظات والمناطق السورية، مع ميزة متابعة البائعين وتوثيق الإعلانات.');
+                        $fbUrl = \App\Models\SiteSetting::get('social_facebook', 'https://facebook.com');
+                        $igUrl = \App\Models\SiteSetting::get('social_instagram', 'https://instagram.com');
+                        $xUrl = \App\Models\SiteSetting::get('social_twitter', 'https://x.com');
+                        $tgUrl = \App\Models\SiteSetting::get('social_telegram', 'https://t.me');
+                        $waUrl = \App\Models\SiteSetting::get('social_whatsapp', 'https://wa.me/963944112233');
+                    @endphp
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 rounded-lg mzad-gradient flex items-center justify-center text-white">
-                            <i class="fa-solid fa-gavel text-amber-400"></i>
-                        </div>
-                        <span class="text-lg font-black text-white">مزاد سوريا</span>
+                        @if($footerLogo)
+                            <img src="{{ Storage::disk('public')->url($footerLogo) }}" alt="{{ $footerSiteName }}" class="h-8 max-w-[150px] object-contain">
+                        @else
+                            <div class="w-8 h-8 rounded-lg mzad-gradient flex items-center justify-center text-white">
+                                <i class="fa-solid fa-gavel text-amber-400"></i>
+                            </div>
+                            <span class="text-lg font-black text-white">{{ $footerSiteName }}</span>
+                        @endif
                     </div>
                     <p class="text-xs text-slate-400 leading-relaxed mb-4">
-                        المنصة الأولى المفتوحة لعرض وبيع وشراء كافة البضائع والسلع الجديدة والمستعملة في جميع المحافظات والمناطق السورية، مع ميزة متابعة البائعين وتوثيق الإعلانات.
+                        {{ $footerDesc }}
                     </p>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-slate-400">تابعنا:</span>
-                        <a href="#" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-brand-500 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-facebook-f"></i></a>
-                        <a href="#" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-emerald-600 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-whatsapp"></i></a>
-                        <a href="#" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-sky-500 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-telegram"></i></a>
+                    <div class="flex items-center flex-wrap gap-2">
+                        <span class="text-xs text-slate-400 ml-1">تابعنا:</span>
+                        @if($fbUrl)
+                            <a href="{{ $fbUrl }}" target="_blank" rel="noopener noreferrer" title="فيسبوك" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-blue-600 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-facebook-f"></i></a>
+                        @endif
+                        @if($igUrl)
+                            <a href="{{ $igUrl }}" target="_blank" rel="noopener noreferrer" title="انستغرام" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-pink-600 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-instagram"></i></a>
+                        @endif
+                        @if($xUrl)
+                            <a href="{{ $xUrl }}" target="_blank" rel="noopener noreferrer" title="منصة إكس" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-black text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-x-twitter"></i></a>
+                        @endif
+                        @if($tgUrl)
+                            <a href="{{ $tgUrl }}" target="_blank" rel="noopener noreferrer" title="تلغرام" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-sky-500 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-telegram"></i></a>
+                        @endif
+                        @if($waUrl)
+                            <a href="{{ $waUrl }}" target="_blank" rel="noopener noreferrer" title="واتساب" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-emerald-600 text-white flex items-center justify-center transition text-xs"><i class="fa-brands fa-whatsapp"></i></a>
+                        @endif
                     </div>
                 </div>
 
@@ -339,7 +398,7 @@
 
             <!-- Bottom Copyright -->
             <div class="pt-6 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-400 gap-2">
-                <p>© {{ date('Y') }} منصة مزاد سوريا (Mzad Syria). جميع الحقوق محفوظة.</p>
+                <p>{{ \App\Models\SiteSetting::get('footer_copyright', '© ' . date('Y') . ' منصة مزاد سوريا (Mzad Syria). جميع الحقوق محفوظة.') }}</p>
                 <p>مبني بأحدث تقنيات Laravel و Flutter وفق أعلى معايير الأمان والتوافقية.</p>
             </div>
         </div>

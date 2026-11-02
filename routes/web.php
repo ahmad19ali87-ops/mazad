@@ -121,6 +121,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->name('admin.')->group(fun
 
     // Listings
     Route::get('/listings', [AdminListingController::class, 'index'])->name('listings.index');
+    Route::post('/listings/toggle-moderation', [AdminListingController::class, 'toggleModeration'])->name('listings.toggle-moderation');
     Route::post('/listings/{id}/featured', [AdminListingController::class, 'toggleFeatured'])->name('listings.featured');
     Route::post('/listings/{id}/status', [AdminListingController::class, 'updateStatus'])->name('listings.status');
     Route::delete('/listings/{id}', [AdminListingController::class, 'destroy'])->name('listings.destroy');
@@ -136,6 +137,28 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->name('admin.')->group(fun
     Route::post('/comments/{id}/approve', [AdminCommentController::class, 'toggleApproval'])->name('comments.approve');
     Route::delete('/comments/{id}', [AdminCommentController::class, 'destroy'])->name('comments.destroy');
 });
+
+// Mobile App Download Route (تحميل تطبيق الأندرويد المحدث APK)
+Route::get('/download/android', function () {
+    $apkPath = public_path('downloads/mazad-syria.apk');
+    if (!file_exists($apkPath)) {
+        // Check if there is an APK in build directory to copy over
+        $buildApk = base_path('apps/mazad_app/build/app/outputs/flutter-apk/app-release.apk');
+        $buildDebugApk = base_path('apps/mazad_app/build/app/outputs/flutter-apk/app-debug.apk');
+        if (file_exists($buildApk)) {
+            @mkdir(dirname($apkPath), 0755, true);
+            copy($buildApk, $apkPath);
+        } elseif (file_exists($buildDebugApk)) {
+            @mkdir(dirname($apkPath), 0755, true);
+            copy($buildDebugApk, $apkPath);
+        } else {
+            return back()->with('info', 'جاري تجهيز وتحديث ملف التطبيق الجديد للتحميل، يرجى المحاولة بعد قليل.');
+        }
+    }
+    return response()->download($apkPath, 'mazad-syria.apk', [
+        'Content-Type' => 'application/vnd.android.package-archive',
+    ]);
+})->name('download.android');
 
 // Hostinger Storage Symlink Fallback: Safely serves images if symlink() is disabled on shared hosting
 Route::get('/storage/{path}', [MediaController::class, 'servePublicStorage'])->where('path', '.*')->name('media.fallback');

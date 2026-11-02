@@ -155,7 +155,11 @@
                                         @endif
                                     </td>
                                     <td class="p-3.5">
-                                        @if($item->is_sold)
+                                        @if($item->status === 'pending')
+                                            <span class="inline-block bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded shadow-sm">قيد المراجعة ⏳</span>
+                                        @elseif(in_array($item->status, ['rejected', 'hidden']))
+                                            <span class="inline-block bg-rose-100 text-rose-900 border border-rose-300 text-[10px] font-bold px-2 py-0.5 rounded">مرفوض/مخفي ⚠️</span>
+                                        @elseif($item->is_sold)
                                             <span class="bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded">تم البيع ✓</span>
                                         @elseif($item->condition === 'new')
                                             <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">جديد</span>

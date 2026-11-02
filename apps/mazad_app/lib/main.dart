@@ -5,9 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' as intl;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppState.init();
   runApp(const MazadApp());
 }
 
@@ -95,7 +99,7 @@ class _MazadAppState extends State<MazadApp> {
 }
 
 // ---------------------------------------------------------
-// Session & Auth State Manager
+// Session & Auth State Manager (Persistent Session)
 // ---------------------------------------------------------
 class AppState {
   static String? token;
@@ -109,6 +113,33 @@ class AppState {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
       };
+
+  // Load persistent token and user data on app startup
+  static Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('auth_token');
+      final userStr = prefs.getString('auth_user');
+      if (userStr != null && userStr.isNotEmpty) {
+        user = jsonDecode(userStr);
+      }
+    } catch (e) {
+      debugPrint('Error loading persistent session: $e');
+    }
+  }
+
+  // Persist session across app restarts
+  static Future<void> saveSession(String newToken, Map<String, dynamic> newUser) async {
+    token = newToken;
+    user = newUser;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', newToken);
+      await prefs.setString('auth_user', jsonEncode(newUser));
+    } catch (e) {
+      debugPrint('Error saving persistent session: $e');
+    }
+  }
 
   // Fast Google Sign-in API call
   static Future<bool> googleLogin({
@@ -131,8 +162,7 @@ class AppState {
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         final data = jsonDecode(res.body);
-        token = data['token'];
-        user = data['user'];
+        await saveSession(data['token'], data['user']);
         return true;
       }
     } catch (e) {
@@ -153,6 +183,11 @@ class AppState {
     token = null;
     user = null;
     followedSellers.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
+      await prefs.remove('auth_user');
+    } catch (_) {}
   }
 }
 
@@ -211,16 +246,31 @@ class _BannerCarouselState extends State<BannerCarousel> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
     if (widget.banners.length > 1) {
       _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!mounted || widget.banners.isEmpty) return;
+        if (!mounted || widget.banners.length <= 1) return;
         final next = (_currentIndex + 1) % widget.banners.length;
-        _pageController.animateToPage(
-          next,
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeInOut,
-        );
+        if (_pageController.hasClients) {
+          _pageController.animateToPage(
+            next,
+            duration: const Duration(milliseconds: 650),
+            curve: Curves.easeInOutCubic,
+          );
+        }
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BannerCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.banners.length != widget.banners.length) {
+      _startTimer();
     }
   }
 
@@ -231,7 +281,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
     super.dispose();
   }
 
-  void _onBannerTap(BannerItem banner) {
+  Future<void> _onBannerTap(BannerItem banner) async {
     if (banner.linkType == 'listing' && banner.listingId != null) {
       Navigator.push(
         context,
@@ -239,38 +289,19 @@ class _BannerCarouselState extends State<BannerCarousel> {
           builder: (_) => ListingDetailScreen(listingId: banner.listingId!),
         ),
       );
-    } else if (banner.linkType == 'external' && banner.externalUrl != null) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.open_in_new, color: Color(0xFF8B1D30)),
-              SizedBox(width: 8),
-              Text('إعلان خارجي ممول', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(banner.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              const Text('رابط الوجهة الخارجية:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              SelectableText(
-                banner.externalUrl!,
-                style: const TextStyle(color: Colors.blue, fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إغلاق'),
-            ),
-          ],
-        ),
-      );
+    } else if (banner.linkType == 'external' && banner.externalUrl != null && banner.externalUrl!.isNotEmpty) {
+      final urlStr = banner.externalUrl!.trim();
+      final uri = Uri.tryParse(urlStr);
+      if (uri != null) {
+        try {
+          final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!launched) {
+            await launchUrl(uri, mode: LaunchMode.platformDefault);
+          }
+        } catch (e) {
+          debugPrint('Error launching banner URL ($urlStr): $e');
+        }
+      }
     }
   }
 
@@ -1903,6 +1934,18 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
   }
 
+  void _shareListing() {
+    final title = _listing?['title'] ?? 'سلعة على مزاد سوريا';
+    final id = widget.listingId;
+    final shareUrl = 'https://mazad.sy/listings/$id';
+    SharePlus.instance.share(
+      ShareParams(
+        text: 'شاهد هذا الإعلان على منصة مزاد سوريا:\n$title\n$shareUrl',
+        subject: title,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -1922,6 +1965,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final isNew = _listing!['condition'] == 'new';
     final isWanted = _listing!['listing_type'] == 'wanted';
     final isSold = _listing!['is_sold'] == true;
+    final isPending = _listing!['status'] == 'pending';
     final jobType = _listing!['job_type'];
 
     final price = double.tryParse(_listing!['price']?.toString() ?? '0') ?? 0;
@@ -1938,6 +1982,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       appBar: AppBar(
         title: Text(_listing!['title'] ?? 'تفاصيل السلعة', style: const TextStyle(fontSize: 15)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.share_rounded, color: Colors.white),
+            tooltip: 'مشاركة الإعلان',
+            onPressed: _shareListing,
+          ),
           IconButton(
             icon: Icon(
               _isFavorited ? Icons.favorite_rounded : Icons.favorite_border_rounded,
@@ -1961,6 +2010,25 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       ),
       body: ListView(
         children: [
+          // Pending Review Banner
+          if (isPending)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: Colors.amber.shade800,
+              child: const Row(
+                children: [
+                  Icon(Icons.hourglass_top_rounded, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'هذا الإعلان قيد المراجعة الإدارية والتدقيق، وسيتم نشره للجميع فور اعتماده.',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Sold Banner
           if (isSold)
             Container(
@@ -3237,10 +3305,9 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> with SingleTi
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             tooltip: 'تسجيل الخروج',
-            onPressed: () {
-              AppState.token = null;
-              AppState.user = null;
-              Navigator.pop(context);
+            onPressed: () async {
+              await AppState.logout();
+              if (context.mounted) Navigator.pop(context);
             },
           ),
         ],
@@ -3614,8 +3681,7 @@ class _AuthDialogState extends State<AuthDialog> {
 
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 || res.statusCode == 201) {
-        AppState.token = data['token'];
-        AppState.user = data['user'];
+        await AppState.saveSession(data['token'], data['user']);
         if (mounted) Navigator.pop(context);
       } else {
         if (mounted) {
@@ -4526,21 +4592,56 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
                                       const SizedBox(height: 4),
                                       Row(
                                         children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: isSold ? Colors.red.shade100 : Colors.green.shade100,
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              isSold ? 'تم البيع وإغلاق الطلب ✅' : 'معروض نشط 🟢',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: isSold ? Colors.red.shade900 : Colors.green.shade900,
+                                          if (item['status'] == 'pending')
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.amber.shade100,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: Colors.amber.shade400),
+                                              ),
+                                              child: Text(
+                                                'قيد المراجعة ⏳',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.amber.shade900,
+                                                ),
+                                              ),
+                                            )
+                                          else if (item['status'] == 'rejected' || item['status'] == 'hidden')
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red.shade100,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: Colors.red.shade400),
+                                              ),
+                                              child: Text(
+                                                'مرفوض/مخفي ⚠️',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.red.shade900,
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: isSold ? Colors.red.shade100 : Colors.green.shade100,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                isSold ? 'تم البيع وإغلاق الطلب ✅' : 'معروض نشط 🟢',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isSold ? Colors.red.shade900 : Colors.green.shade900,
+                                                ),
                                               ),
                                             ),
-                                          ),
                                           if (item['is_featured'] == true) ...[
                                             const SizedBox(width: 6),
                                             Container(

@@ -17,19 +17,44 @@
         </div>
     </div>
 
-    <form action="{{ route('admin.appearance.update') }}" method="POST" class="space-y-6">
+    <form action="{{ route('admin.appearance.update') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
         @csrf
 
-        <!-- 1. General & Brand Identity -->
+        <!-- 0. Listing Moderation & Approval Switch (مراجعة الإعلانات قبل النشر) -->
+        <div class="bg-gradient-to-r from-slate-900 via-slate-900 to-amber-950/30 border border-amber-500/30 rounded-2xl p-6 shadow-lg">
+            <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-clipboard-check text-amber-400 text-base"></i>
+                <span class="text-amber-400">نظام فحص ومراجعة الإعلانات (Listing Moderation System)</span>
+            </h3>
+            <p class="text-xs text-slate-300 mb-4">التحكم بسياسة النشر الفوري أو المراجعة الإدارية المسبقة لجميع الإعلانات المنشورة من قبل المستخدمين</p>
+
+            <label class="flex items-center justify-between p-4 bg-slate-800/80 rounded-xl border border-amber-500/20 cursor-pointer hover:bg-slate-800 transition">
+                <div>
+                    <p class="text-xs font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-shield-halved text-amber-400"></i>
+                        <span>تفعيل مراجعة الإعلانات قبل ظهورها للجمهور</span>
+                    </p>
+                    <p class="text-[11px] text-slate-400 mt-1">
+                        • <strong>عند التفعيل:</strong> أي إعلان جديد يدخل في حالة <span class="text-amber-400 font-bold">"قيد المراجعة"</span> ولا يظهر في الموقع أو التطبيق إلا بعد موافقة الإدارة.<br>
+                        • <strong>عند التعطيل:</strong> يتم نشر وقبول أي إعلان فورياً وتلقائياً دون انتظار مراجعة.
+                    </p>
+                </div>
+                <input type="hidden" name="listings_require_approval" value="0">
+                <input type="checkbox" name="listings_require_approval" value="1" {{ ($settings['listings_require_approval'] ?? '0') == '1' ? 'checked' : '' }} 
+                       class="w-6 h-6 rounded bg-slate-700 border-slate-600 text-amber-500 focus:ring-amber-500">
+            </label>
+        </div>
+
+        <!-- 1. General & Brand Identity + Logos -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
             <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
                 <i class="fa-solid fa-globe text-brand-500"></i>
-                <span>الهوية الأساسية للموقع والمنصة</span>
+                <span>الهوية الأساسية، الشعار، وأيقونة المتصفح</span>
             </h3>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 mb-1">اسم المنصة</label>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">اسم المنصة والموقع</label>
                     <input type="text" name="site_name" value="{{ $settings['site_name'] ?? 'مزاد سوريا' }}" 
                            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
@@ -56,6 +81,114 @@
                     <label class="block text-xs font-bold text-slate-400 mb-1">واتساب خدمة العملاء</label>
                     <input type="text" name="contact_whatsapp" value="{{ $settings['contact_whatsapp'] ?? '+963 944 112233' }}" 
                            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+            </div>
+
+            <!-- Logo & Favicon Uploads -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-800">
+                <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <label class="block text-xs font-bold text-white mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-image text-brand-500"></i>
+                        <span>رفع شعار الموقع (Logo)</span>
+                    </label>
+                    @if(!empty($settings['site_logo']))
+                        <div class="mb-3 flex items-center gap-3">
+                            <img src="{{ Storage::disk('public')->url($settings['site_logo']) }}" alt="Site Logo" class="h-10 object-contain bg-slate-900 p-1.5 rounded-lg border border-slate-700">
+                            <span class="text-[11px] text-emerald-400 font-bold">الشعار الحالي محفوظ</span>
+                        </div>
+                    @endif
+                    <input type="file" name="site_logo" accept="image/*" 
+                           class="block w-full text-xs text-slate-400 file:mr-0 file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-brand-500 file:text-white hover:file:bg-brand-600">
+                    <p class="text-[10px] text-slate-500 mt-1">المقاس المفضل: 240×60 بكسل، PNG شفاف أو SVG أو JPG</p>
+                </div>
+
+                <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <label class="block text-xs font-bold text-white mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-icons text-amber-400"></i>
+                        <span>أيقونة المتصفح (Favicon)</span>
+                    </label>
+                    @if(!empty($settings['site_favicon']))
+                        <div class="mb-3 flex items-center gap-3">
+                            <img src="{{ Storage::disk('public')->url($settings['site_favicon']) }}" alt="Favicon" class="w-8 h-8 object-contain bg-slate-900 p-1 rounded-lg border border-slate-700">
+                            <span class="text-[11px] text-emerald-400 font-bold">الأيقونة الحالية محفوظة</span>
+                        </div>
+                    @endif
+                    <input type="file" name="site_favicon" accept=".ico,image/png,image/x-icon,image/svg+xml" 
+                           class="block w-full text-xs text-slate-400 file:mr-0 file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-600">
+                    <p class="text-[10px] text-slate-500 mt-1">أيقونة التبويب في المتصفح (.ico أو .png بحجم 32×32 بكسل)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Social Media Links (روابط وسائل التواصل الاجتماعي) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-share-nodes text-sky-400"></i>
+                <span>حسابات ووسائل التواصل الاجتماعي (Social Media)</span>
+            </h3>
+            <p class="text-xs text-slate-400 mb-4">تظهر هذه الروابط كأيقونات تفاعلية في أسفل الموقع وتطبيق الموبايل ويمكن تغييرها بأي وقت</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                        <i class="fa-brands fa-facebook text-blue-500"></i> رابط فيسبوك (Facebook)
+                    </label>
+                    <input type="url" name="social_facebook" value="{{ $settings['social_facebook'] ?? 'https://facebook.com' }}" placeholder="https://facebook.com/..." 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                        <i class="fa-brands fa-instagram text-pink-500"></i> رابط انستغرام (Instagram)
+                    </label>
+                    <input type="url" name="social_instagram" value="{{ $settings['social_instagram'] ?? 'https://instagram.com' }}" placeholder="https://instagram.com/..." 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                        <i class="fa-brands fa-x-twitter text-white"></i> رابط منصة إكس / تويتر (X)
+                    </label>
+                    <input type="url" name="social_twitter" value="{{ $settings['social_twitter'] ?? 'https://x.com' }}" placeholder="https://x.com/..." 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                        <i class="fa-brands fa-telegram text-sky-400"></i> رابط قناة / حساب تلغرام (Telegram)
+                    </label>
+                    <input type="url" name="social_telegram" value="{{ $settings['social_telegram'] ?? 'https://t.me' }}" placeholder="https://t.me/..." 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                        <i class="fa-brands fa-whatsapp text-emerald-400"></i> رابط محادثة واتساب (WhatsApp Direct Link)
+                    </label>
+                    <input type="url" name="social_whatsapp" value="{{ $settings['social_whatsapp'] ?? 'https://wa.me/963944112233' }}" placeholder="https://wa.me/..." 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Texts & Copyright (نصوص الفوتر والحقوق) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-align-right text-emerald-400"></i>
+                <span>نصوص الفوتر، النبذة التعريفية وحقوق الملكية</span>
+            </h3>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">النبذة التعريفية في الفوتر (About Us)</label>
+                    <textarea name="footer_description" rows="2" 
+                              class="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500">{{ $settings['footer_description'] ?? 'المنصة الأولى المفتوحة لعرض وبيع وشراء كافة البضائع والسلع الجديدة والمستعملة في جميع المحافظات والمناطق السورية، مع ميزة متابعة البائعين وتوثيق الإعلانات.' }}</textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">نص حقوق الملكية الفكرية في أسفل الصفحة (Copyright)</label>
+                    <input type="text" name="footer_copyright" value="{{ $settings['footer_copyright'] ?? ('© ' . date('Y') . ' منصة مزاد سوريا (Mzad Syria). جميع الحقوق محفوظة.') }}" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
             </div>
         </div>

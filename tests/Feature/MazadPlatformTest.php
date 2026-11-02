@@ -239,5 +239,99 @@ class MazadPlatformTest extends TestCase
         $response->assertSee('إعلاناتي ومبيعاتي');
         $response->assertSee('تذكر معلوماتي');
     }
+
+    /**
+     * Test Android APK download route serves the file.
+     */
+    public function test_android_apk_download_route(): void
+    {
+        $response = $this->get('/download/android');
+        $response->assertStatus(200);
+        $response->assertHeader('content-type', 'application/vnd.android.package-archive');
+    }
+
+    /**
+     * Test notifications strict isolation (only the owner receives the comment notification).
+     */
+    public function test_notifications_strict_isolation(): void
+    {
+        $seller = User::where('role', 'seller')->first();
+        $buyer = User::where('email', 'ahmad.buyer@mazad.sy')->first();
+        $listing = Listing::where('user_id', $seller->id)->first();
+
+        $sellerInitialNotificationCount = \App\Models\InAppNotification::where('user_id', $seller->id)->count();
+        $buyerInitialNotificationCount = \App\Models\InAppNotification::where('user_id', $buyer->id)->count();
+
+        // Buyer comments on seller's listing
+        $this->actingAs($buyer)->post("/listings/{$listing->id}/comments", [
+            'comment' => 'إشعار فحص العزل الأمني',
+        ]);
+
+        // Seller receives notification
+        $this->assertEquals($sellerInitialNotificationCount + 1, \App\Models\InAppNotification::where('user_id', $seller->id)->count());
+        // Buyer does NOT receive notification
+        $this->assertEquals($buyerInitialNotificationCount, \App\Models\InAppNotification::where('user_id', $buyer->id)->count());
+        // Notification belongs strictly to seller
+        $lastNotif = \App\Models\InAppNotification::where('user_id', $seller->id)->latest()->first();
+        $this->assertEquals($seller->id, $lastNotif->user_id);
+    }
+
+    /**
+     * Test listing moderation toggle and admin approval flow.
+     */
+    public function test_listing_moderation_toggle_and_approval(): void
+    {
+        $admin = User::where('email', 'admin@mazad.sy')->first();
+        $seller = User::where('role', 'seller')->first();
+
+        // Admin toggles moderation ON
+        $response = $this->actingAs($admin)->post('/admin/listings/toggle-moderation');
+        $response->assertRedirect();
+        $this->assertEquals('1', \App\Models\SiteSetting::get('listings_require_approval'));
+
+        // Seller posts an ad with an image while moderation is enabled
+        $category = \App\Models\Category::first();
+        $gov = \App\Models\Governorate::first();
+        $response = $this->actingAs($seller)->post('/listings', [
+            'title' => 'سلعة تجريبية للمراجعة الإدارية',
+            'category_id' => $category->id,
+            'governorate_id' => $gov->id,
+            'city' => 'دمشق',
+            'condition' => 'new',
+            'type' => 'offer',
+            'price' => 500000,
+            'currency' => 'SYP',
+            'description' => 'وصف تفصيلي للسلعة المفحوصة في نظام المراجعة والتأكد من إرسال الإشعار',
+            'images' => [
+                \Illuminate\Http\UploadedFile::fake()->image('listing.jpg'),
+            ],
+        ]);
+        $response->assertRedirect('/dashboard');
+
+        // Verify the listing is created as pending
+        $listing = Listing::where('title', 'سلعة تجريبية للمراجعة الإدارية')->first();
+        $this->assertNotNull($listing);
+        $this->assertEquals('pending', $listing->status);
+
+        // Public user cannot view pending listing (redirected to home with info message)
+        $publicUser = User::where('email', 'ahmad.buyer@mazad.sy')->first();
+        $this->actingAs($publicUser)->get("/listings/{$listing->id}")->assertRedirect('/');
+
+        // Author can view pending listing
+        $this->actingAs($seller)->get("/listings/{$listing->id}")->assertStatus(200);
+
+        // Admin approves the listing
+        $this->actingAs($admin)->post("/admin/listings/{$listing->id}/status", [
+            'status' => 'active',
+        ]);
+        $this->assertEquals('active', $listing->fresh()->status);
+
+        // Now public can view
+        $this->actingAs($publicUser)->get("/listings/{$listing->id}")->assertStatus(200);
+
+        // Turn moderation off again for default open state
+        $this->actingAs($admin)->post('/admin/listings/toggle-moderation');
+        $this->assertEquals('0', \App\Models\SiteSetting::get('listings_require_approval'));
+    }
 }
 

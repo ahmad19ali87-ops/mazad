@@ -18,9 +18,30 @@
         <h1 class="text-3xl md:text-5xl font-black mb-3 tracking-tight">
             سوقك المفتوح لكل السلع في <span class="text-amber-400">سوريا</span>
         </h1>
-        <p class="text-slate-200 text-sm md:text-base max-w-2xl mx-auto mb-8 font-light">
+        <p class="text-slate-200 text-sm md:text-base max-w-2xl mx-auto mb-6 font-light">
             تصفح آلاف الإعلانات المفحوصة، ميز الجديد من المستعمل، تابع بائعيك المفضلين وتواصل فورياً مع أصحاب السلع
         </p>
+
+        <!-- Top App Download Badges (Android APK & iOS Soon) -->
+        <div class="flex items-center justify-center flex-wrap gap-3 mb-8">
+            <a href="{{ route('download.android') }}" class="inline-flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-lg transition transform hover:-translate-y-0.5 border border-emerald-400/40">
+                <i class="fa-brands fa-android text-lg text-white"></i>
+                <div class="text-right">
+                    <span class="block text-[10px] text-emerald-100 font-semibold leading-none">التطبيق المحدث للأندرويد</span>
+                    <span class="font-black text-xs text-white">تحميل التطبيق (APK)</span>
+                </div>
+                <i class="fa-solid fa-circle-down text-xs text-emerald-200 mr-1 animate-bounce"></i>
+            </a>
+
+            <div class="inline-flex items-center gap-2.5 bg-white/10 backdrop-blur-md border border-white/20 text-white px-4 py-2 rounded-xl text-xs select-none">
+                <i class="fa-brands fa-apple text-lg text-slate-200"></i>
+                <div class="text-right">
+                    <span class="block text-[10px] text-slate-300 font-semibold leading-none">تطبيق الآيفون (iOS)</span>
+                    <span class="font-black text-xs text-white">تحميل للآيفون</span>
+                </div>
+                <span class="bg-amber-400 text-slate-950 text-[10px] px-2 py-0.5 rounded font-black mr-1 shadow-sm">قريباً</span>
+            </div>
+        </div>
 
         <!-- Main Search & Filtering Box -->
         <div class="max-w-4xl mx-auto bg-white rounded-2xl p-3 md:p-4 shadow-2xl text-slate-900 text-right">
@@ -268,84 +289,6 @@
         </div>
     </div>
 </section>
-
-<!-- Sponsored Banners 5-Second Carousel -->
-@if(isset($banners) && $banners->count() > 0)
-<section class="max-w-7xl mx-auto px-4 pt-6 pb-2">
-    <div x-data="{
-        current: 0,
-        total: {{ $banners->count() }},
-        timer: null,
-        startTimer() {
-            this.timer = setInterval(() => {
-                this.next();
-            }, 5000);
-        },
-        stopTimer() {
-            if (this.timer) clearInterval(this.timer);
-        },
-        next() {
-            this.current = (this.current + 1) % this.total;
-        },
-        prev() {
-            this.current = (this.current - 1 + this.total) % this.total;
-        }
-    }" 
-    x-init="startTimer()" 
-    @mouseenter="stopTimer()" 
-    @mouseleave="startTimer()"
-    class="relative rounded-3xl overflow-hidden shadow-md border border-slate-200/80 bg-slate-900 h-44 sm:h-60 md:h-72 select-none">
-        
-        @foreach($banners as $index => $banner)
-            <div x-show="current === {{ $index }}" 
-                 x-transition:enter="transition ease-out duration-700 transform" 
-                 x-transition:enter-start="opacity-0 translate-x-8" 
-                 x-transition:enter-end="opacity-100 translate-x-0" 
-                 x-transition:leave="transition ease-in duration-500 transform" 
-                 x-transition:leave-start="opacity-100 translate-x-0" 
-                 x-transition:leave-end="opacity-0 -translate-x-8" 
-                 class="absolute inset-0 w-full h-full">
-                
-                <a href="{{ $banner->target_url }}" target="{{ $banner->link_type === 'external' ? '_blank' : '_self' }}" class="block w-full h-full relative group">
-                    <img src="{{ $banner->image_url }}" alt="{{ $banner->title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-700">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex flex-col justify-end p-5 sm:p-7">
-                        <div class="max-w-xl text-right">
-                            <span class="inline-block bg-amber-400 text-slate-950 font-black text-[11px] px-3 py-1 rounded-full shadow mb-2">
-                                {{ $banner->badge_text ?? 'إعلان ممول ⭐' }}
-                            </span>
-                            <h3 class="text-lg sm:text-2xl md:text-3xl font-black text-white leading-tight drop-shadow">
-                                {{ $banner->title }}
-                            </h3>
-                            @if($banner->subtitle)
-                                <p class="text-xs sm:text-sm text-slate-200 mt-1 line-clamp-2 drop-shadow">
-                                    {{ $banner->subtitle }}
-                                </p>
-                            @endif
-                        </div>
-                    </div>
-                </a>
-            </div>
-        @endforeach
-
-        <!-- Next / Prev Controls -->
-        <button @click.prevent="prev()" class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
-            <i class="fa-solid fa-chevron-right text-xs"></i>
-        </button>
-        <button @click.prevent="next()" class="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition z-20">
-            <i class="fa-solid fa-chevron-left text-xs"></i>
-        </button>
-
-        <!-- Dots indicators -->
-        <div class="absolute bottom-3 inset-x-0 flex justify-center gap-1.5 z-20">
-            @foreach($banners as $index => $banner)
-                <button @click="current = {{ $index }}" 
-                        :class="current === {{ $index }} ? 'w-6 bg-amber-400' : 'w-2 bg-white/50'" 
-                        class="h-1.5 rounded-full transition-all duration-300"></button>
-            @endforeach
-        </div>
-    </div>
-</section>
-@endif
 @endif
 
 <!-- Latest Listings with New/Used Filter Tabs -->

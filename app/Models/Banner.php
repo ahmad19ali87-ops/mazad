@@ -31,6 +31,11 @@ class Banner extends Model
         'clicks_count' => 'integer',
     ];
 
+    protected $appends = [
+        'image_url',
+        'target_url',
+    ];
+
     public function listing(): BelongsTo
     {
         return $this->belongsTo(Listing::class);
@@ -45,6 +50,17 @@ class Banner extends Model
             return $this->image_path;
         }
         return Storage::disk('public')->url($this->image_path);
+    }
+
+    public function getTargetUrlAttribute(): string
+    {
+        if ($this->link_type === 'listing' && $this->listing_id) {
+            return route('listings.show', $this->listing_id);
+        }
+        if (!empty($this->external_url)) {
+            return $this->external_url;
+        }
+        return '#';
     }
 
     public function scopeActive($query)

@@ -27,7 +27,12 @@ class ListingService
     {
         return DB::transaction(function () use ($user, $validatedData, $uploadedImages) {
             $validatedData['user_id'] = $user->id;
-            $validatedData['status'] = $user->isAdmin() ? 'active' : 'active'; // Default active or can be pending
+
+            // Check if site admin enabled pre-approval requirement
+            $requireApproval = (bool)\App\Models\SiteSetting::get('listings_require_approval', false);
+            $status = ($requireApproval && !$user->isAdmin()) ? 'pending' : 'active';
+            $validatedData['status'] = $status;
+
             $validatedData['currency'] = $validatedData['currency'] ?? 'SYP';
             $validatedData['condition'] = $validatedData['condition'] ?? 'used';
             $validatedData['listing_type'] = $validatedData['listing_type'] ?? 'sale';
@@ -47,8 +52,19 @@ class ListingService
             // Handle image uploads
             $this->saveImages($listing, $uploadedImages);
 
-            // Notify all followers of this seller!
-            $this->notifyFollowers($user, $listing);
+            // If active: notify followers. If pending: notify user that ad is under review
+            if ($status === 'active') {
+                $this->notifyFollowers($user, $listing);
+            } else {
+                InAppNotification::create([
+                    'user_id' => $user->id,
+                    'title' => 'تم استلام إعلانك وهو قيد المراجعة ⏳',
+                    'message' => 'تم استلام إعلانك "' . $listing->title . '" بنجاح وهو الآن قيد المراجعة والتدقيق من قبل إدارة الموقع وسيتم نشره للجميع فور اعتماده.',
+                    'type' => 'listing_pending',
+                    'action_url' => '/dashboard',
+                    'is_read' => false,
+                ]);
+            }
 
             return $listing;
         });
@@ -114,7 +130,7 @@ class ListingService
     /**
      * Notify followers when a seller publishes a new listing.
      */
-    protected function notifyFollowers(User $seller, Listing $listing): void
+    public function notifyFollowers(User $seller, Listing $listing): void
     {
         $followers = $seller->followers()->get();
 

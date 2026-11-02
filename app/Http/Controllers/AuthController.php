@@ -52,7 +52,8 @@ class AuthController extends Controller
             'password.required' => 'يرجى إدخال كلمة المرور',
         ]);
 
-        $remember = (bool)$request->remember;
+        // Always remember session persistently so the user never gets logged out automatically
+        $remember = true;
 
         if (Auth::attempt($credentials, $remember)) {
             // Record successful login & reset counters
