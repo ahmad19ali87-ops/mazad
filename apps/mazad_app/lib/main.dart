@@ -33,11 +33,18 @@ class AppConfig {
   static String siteName = 'مزاد سوريا';
   static String heroSubtitle = 'السوق السوري المفتوح لبيع وشراء كافة السلع والسيارات والعقارات والوظائف';
 
+  // الخادم الحي المباشر لمنصة مزاد سوريا
+  static const String liveHost = 'https://mazad.ahmadinsights.online';
+  static const bool useLocalHost = false;
+
   static String get host {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000';
+    if (useLocalHost) {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:8000';
+      }
+      return 'http://127.0.0.1:8000';
     }
-    return 'http://127.0.0.1:8000';
+    return liveHost;
   }
 
   static String get baseUrl => '$host/api';
@@ -47,7 +54,8 @@ class AppConfig {
       return 'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?auto=format&fit=crop&w=400&q=80';
     }
     if (path.startsWith('http')) return path;
-    return '$host/storage/$path';
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    return '$host/storage/$cleanPath';
   }
 }
 
@@ -1937,7 +1945,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   void _shareListing() {
     final title = _listing?['title'] ?? 'سلعة على مزاد سوريا';
     final id = widget.listingId;
-    final shareUrl = 'https://mazad.sy/listings/$id';
+    final slug = _listing?['slug'] ?? id.toString();
+    final shareUrl = '${AppConfig.host}/listings/$slug';
     SharePlus.instance.share(
       ShareParams(
         text: 'شاهد هذا الإعلان على منصة مزاد سوريا:\n$title\n$shareUrl',

@@ -39,6 +39,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="mazad.ahmadinsights.online" android:pathPrefix="/listings" />
                 <data android:scheme="https" android:host="mazad.sy" android:pathPrefix="/listings" />
             </intent-filter>
         </activity>
