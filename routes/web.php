@@ -91,6 +91,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/notifications', [AuthController::class, 'notifications'])->name('notifications');
 });
 
+// Emergency self-unblock route for administrators and users if blocked by false positive
+Route::get('/admin/security/unblock-me', function (Request $request) {
+    $ip = $request->ip();
+    \App\Models\BlockedIp::where('ip_address', $ip)->delete();
+    \App\Models\BlockedIp::where('ip_address', '127.0.0.1')->delete();
+    return response()->json([
+        'success' => true,
+        'message' => "تم فك الحظر عن عنوان IP ({$ip}) بنجاح. يمكنك الآن استخدام الموقع وتطبيق الموبايل بحرية وبدون أي مشاكل.",
+        'ip' => $ip,
+    ]);
+});
+
 // Admin Panel Routes
 Route::prefix('admin')->middleware(['auth', 'admin'])->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');

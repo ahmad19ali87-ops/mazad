@@ -122,13 +122,37 @@ class SecureFileUploadService
 
         $allowedMimesForExt = self::ALLOWED_EXTENSIONS[$clientExt] ?? [];
         if (!in_array($realMime, $allowedMimesForExt, true)) {
-            $this->logThreat($ip, 'mime_type_mismatch', "عدم تطابق نوع الملف الحقيقي ({$realMime}) مع الامتداد المزعوم ({$clientExt}) للملف {$originalName}");
-            return [
-                'is_safe' => false,
-                'reason' => 'تم رفض الملف: نوع الملف الفعلي لا يتطابق مع امتداده (امتداد وهمي أو ملف مموه).',
-                'safe_extension' => null,
-                'safe_mime' => null,
+            // Check if it is a genuine valid image format that was simply saved with an alternate extension
+            $validImageMimes = [
+                'image/jpeg' => 'jpg',
+                'image/pjpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/webp' => 'webp',
             ];
+
+            if (isset($validImageMimes[$realMime])) {
+                // Legitimate image with a slightly mismatched extension (e.g. PNG saved as JPG) - auto-correct cleanly
+                $clientExt = $validImageMimes[$realMime];
+            } else {
+                // Reject safely with warning, but do NOT ban the user's IP for a simple MIME mismatch
+                $this->securityMonitor->logSecurityEvent(
+                    ip: $ip,
+                    eventType: 'mime_type_mismatch',
+                    severity: 'medium',
+                    url: request()->fullUrl(),
+                    method: request()->method(),
+                    userAgent: request()->userAgent(),
+                    payload: "نوع الملف غير صالح: {$realMime} للامتداد {$clientExt} للملف {$originalName}",
+                    actionTaken: 'rejected'
+                );
+
+                return [
+                    'is_safe' => false,
+                    'reason' => 'تم رفض الملف: نوع الملف الفعلي لا يتطابق مع امتداده كصورة صالحة. يرجى اختيار ملف صورة حقيقي (JPG, PNG, WEBP).',
+                    'safe_extension' => null,
+                    'safe_mime' => null,
+                ];
+            }
         }
 
         // 6. Binary Content Deep Inspection (Anti-Polyglot / WebShell Payload Detection)

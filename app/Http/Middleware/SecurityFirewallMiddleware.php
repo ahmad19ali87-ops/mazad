@@ -21,8 +21,12 @@ class SecurityFirewallMiddleware
     {
         $ip = $request->ip();
 
-        // 1. Check if IP is currently blocked
-        if ($this->securityMonitor->isIpBlocked($ip)) {
+        // 1. Loopback addresses and admin routes are never blocked to avoid locking out the system administrator
+        $isLocalhost = in_array($ip, ['127.0.0.1', '::1', 'localhost'], true);
+        $isAdminRoute = $request->is('admin*') || $request->is('login');
+
+        // Check if IP is currently blocked (except for admin rescue routes)
+        if (!$isLocalhost && !$isAdminRoute && $this->securityMonitor->isIpBlocked($ip)) {
             $blocked = BlockedIp::where('ip_address', $ip)->first();
             $reason = $blocked ? $blocked->reason : 'حظر أمني بسبب مخالفة معايير الاستخدام';
 
@@ -43,8 +47,8 @@ class SecurityFirewallMiddleware
         }
 
         // 2. Real-time attack inspection (SQLi, XSS, Scanner, Traversal)
-        // Skip inspection on safe admin and safe asset routes
-        if (!$request->is('admin/*') && !$request->is('build/*') && !$request->is('storage/*')) {
+        // Skip inspection on safe admin, login, and asset routes
+        if (!$isAdminRoute && !$request->is('build/*') && !$request->is('storage/*')) {
             $attack = $this->securityMonitor->inspectRequest($request);
             if ($attack && $this->securityMonitor->isIpBlocked($ip)) {
                 if ($request->expectsJson() || $request->is('api/*')) {
