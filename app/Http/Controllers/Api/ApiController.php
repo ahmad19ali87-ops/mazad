@@ -13,6 +13,7 @@ use App\Models\Listing;
 use App\Models\ListingImage;
 use App\Models\SiteSetting;
 use App\Models\User;
+use App\Services\AuthMailService;
 use App\Services\ListingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,13 +25,15 @@ use Illuminate\Validation\ValidationException;
 class ApiController extends Controller
 {
     protected ListingService $listingService;
+    protected AuthMailService $authMailService;
 
-    public function __construct(ListingService $listingService)
+    public function __construct(ListingService $listingService, AuthMailService $authMailService)
     {
         $this->listingService = $listingService;
+        $this->authMailService = $authMailService;
     }
 
-    // Auth: Register
+    // Auth: Register (Requires 6-Digit Email Code)
     public function register(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -41,7 +44,17 @@ class ApiController extends Controller
             'governorate' => 'nullable|string',
             'whatsapp' => 'nullable|string',
             'role' => 'nullable|in:user,seller',
+        ], [
+            'name.required' => 'يرجى إدخال الاسم الكامل',
+            'email.required' => 'يرجى إدخال البريد الإلكتروني',
+            'email.unique' => 'البريد الإلكتروني مسجل مسبقاً',
+            'phone.required' => 'يرجى إدخال رقم الهاتف',
+            'phone.unique' => 'رقم الهاتف مسجل مسبقاً',
+            'password.required' => 'يرجى إدخال كلمة المرور',
+            'password.min' => 'كلمة المرور يجب ألا تقل عن 6 خانات',
         ]);
+
+        $verificationCode = (string) random_int(100000, 999999);
 
         $user = User::create([
             'name' => $validated['name'],
@@ -52,16 +65,218 @@ class ApiController extends Controller
             'whatsapp' => $validated['whatsapp'] ?? $validated['phone'],
             'role' => $validated['role'] ?? 'user',
             'is_verified' => false,
+            'verification_code' => $verificationCode,
+            'verification_code_expires_at' => now()->addMinutes(15),
+            'remember_contact_info' => true,
+        ]);
+
+        // Send 6-digit verification code from info@ahmadinsights.online
+        $this->authMailService->sendVerificationCode($user, $verificationCode);
+
+        return response()->json([
+            'success' => true,
+            'requires_verification' => true,
+            'email' => $user->email,
+            'message' => 'تم إنشاء الحساب بنجاح. يرجى إدخال رمز التحقق السداسي المرسل إلى بريدك الإلكتروني لتفعيل الحساب.',
+        ], 201);
+    }
+
+    // Auth: Verify Email via 6-Digit Code
+    public function verifyEmail(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+        ], [
+            'email.required' => 'يرجى إدخال البريد الإلكتروني',
+            'code.required' => 'يرجى إدخال رمز التحقق السداسي',
+            'code.size' => 'رمز التحقق يجب أن يتكون من 6 أرقام',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'المستخدم غير مسجل',
+            ], 404);
+        }
+
+        if ($user->is_verified) {
+            $token = $user->createToken('mazad_mobile_app')->plainTextToken;
+            return response()->json([
+                'success' => true,
+                'message' => 'الحساب مفعل بالفعل',
+                'token' => $token,
+                'user' => $user,
+            ]);
+        }
+
+        if ($user->verification_code !== trim($request->code)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'رمز التحقق غير صحيح، يرجى التأكد وإعادة المحاولة.',
+            ], 422);
+        }
+
+        if ($user->verification_code_expires_at && $user->verification_code_expires_at->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'انتهت صلاحية رمز التحقق (الصلاحية 15 دقيقة). يرجى طلب رمز جديد.',
+            ], 422);
+        }
+
+        // Activate User
+        $user->update([
+            'is_verified' => true,
+            'email_verified_at' => now(),
+            'verification_code' => null,
+            'verification_code_expires_at' => null,
         ]);
 
         $token = $user->createToken('mazad_mobile_app')->plainTextToken;
 
         return response()->json([
             'success' => true,
-            'message' => 'تم إنشاء الحساب بنجاح',
+            'message' => 'تم تفعيل الحساب بنجاح! أهلاً بك في مزاد سوريا.',
             'token' => $token,
             'user' => $user,
-        ], 201);
+        ]);
+    }
+
+    // Auth: Resend 6-Digit Verification Code
+    public function resendVerification(Request $request): JsonResponse
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'المستخدم غير مسجل'], 404);
+        }
+
+        if ($user->is_verified) {
+            return response()->json(['success' => true, 'message' => 'الحساب مفعل بالفعل']);
+        }
+
+        $newCode = (string) random_int(100000, 999999);
+        $user->update([
+            'verification_code' => $newCode,
+            'verification_code_expires_at' => now()->addMinutes(15),
+        ]);
+
+        $this->authMailService->sendVerificationCode($user, $newCode);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم إرسال رمز تحقق سداسي جديد إلى بريدك الإلكتروني بنجاح',
+        ]);
+    }
+
+    // Auth: Forgot Password (Send 6-digit code and link)
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'لم نتمكن من العثور على حساب مسجل بهذا البريد الإلكتروني',
+            ], 404);
+        }
+
+        $resetCode = (string) random_int(100000, 999999);
+        $resetToken = Str::random(60);
+
+        $user->update([
+            'password_reset_code' => $resetCode,
+            'password_reset_token' => $resetToken,
+            'password_reset_expires_at' => now()->addMinutes(15),
+        ]);
+
+        $resetUrl = route('password.reset', [
+            'token' => $resetToken,
+            'email' => $user->email,
+        ]);
+
+        $this->authMailService->sendPasswordReset($user, $resetCode, $resetUrl);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم إرسال رمز الاستعادة ورابط التعيين إلى بريدك الإلكتروني بنجاح',
+        ]);
+    }
+
+    // Auth: Reset Password (Accepts 6-digit code or link token)
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string|min:6|confirmed',
+            'code' => 'nullable|string',
+            'token' => 'nullable|string',
+        ], [
+            'email.required' => 'يرجى إدخال البريد الإلكتروني',
+            'password.required' => 'يرجى إدخال كلمة المرور الجديدة',
+            'password.confirmed' => 'تأكيد كلمة المرور غير متطابق',
+            'password.min' => 'كلمة المرور يجب ألا تقل عن 6 أحرف',
+        ]);
+
+        if (!$request->filled('code') && !$request->filled('token')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'يرجى تزويد رمز الاستعادة السداسي أو رابط التعيين',
+            ], 422);
+        }
+
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'المستخدم غير مسجل'], 404);
+        }
+
+        if ($user->password_reset_expires_at && $user->password_reset_expires_at->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'انتهت صلاحية رمز ورابط الاستعادة (الصلاحية 15 دقيقة). يرجى طلب استعادة جديدة.',
+            ], 422);
+        }
+
+        $valid = false;
+
+        if ($request->filled('code') && $user->password_reset_code && trim($request->code) === $user->password_reset_code) {
+            $valid = true;
+        }
+
+        if ($request->filled('token') && $user->password_reset_token && $request->token === $user->password_reset_token) {
+            $valid = true;
+        }
+
+        if (!$valid) {
+            return response()->json([
+                'success' => false,
+                'message' => 'رمز التحقق أو رابط الاستعادة غير صالح',
+            ], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->password),
+            'password_reset_code' => null,
+            'password_reset_token' => null,
+            'password_reset_expires_at' => null,
+            'is_verified' => true,
+            'email_verified_at' => $user->email_verified_at ?: now(),
+        ]);
+
+        $token = $user->createToken('mazad_mobile_app')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تمت إعادة تعيين كلمة المرور بنجاح وتم تسجيل دخولك',
+            'token' => $token,
+            'user' => $user,
+        ]);
     }
 
     // Auth: Login
@@ -79,6 +294,23 @@ class ApiController extends Controller
                 'success' => false,
                 'message' => 'بيانات الدخول غير صحيحة',
             ], 401);
+        }
+
+        // Require email verification
+        if (!$user->is_verified) {
+            $code = (string) random_int(100000, 999999);
+            $user->update([
+                'verification_code' => $code,
+                'verification_code_expires_at' => now()->addMinutes(15),
+            ]);
+            $this->authMailService->sendVerificationCode($user, $code);
+
+            return response()->json([
+                'success' => false,
+                'requires_verification' => true,
+                'email' => $user->email,
+                'message' => 'حسابك بحاجة إلى تفعيل. لقد أرسلنا رمز تحقق سداسي جديد إلى بريدك الإلكتروني.',
+            ], 403);
         }
 
         $token = $user->createToken('mazad_mobile_app')->plainTextToken;
@@ -554,6 +786,8 @@ class ApiController extends Controller
             $user->update([
                 'google_id' => $user->google_id ?: $googleId,
                 'avatar_url' => $user->avatar_url ?: $avatarUrl,
+                'is_verified' => true,
+                'email_verified_at' => $user->email_verified_at ?: now(),
             ]);
         } else {
             $user = User::create([
@@ -565,6 +799,7 @@ class ApiController extends Controller
                 'avatar_url' => $avatarUrl,
                 'role' => 'user',
                 'is_verified' => true,
+                'email_verified_at' => now(),
                 'remember_contact_info' => true,
             ]);
         }

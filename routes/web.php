@@ -81,7 +81,22 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-Route::match(['get', 'post'], '/auth/google', [AuthController::class, 'googleLogin'])->name('auth.google');
+
+// Google OAuth (Socialite redirect and callback)
+Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle'])->name('auth.google.redirect');
+Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::match(['get', 'post'], '/auth/google', [AuthController::class, 'redirectToGoogle'])->name('auth.google');
+
+// Email 6-Digit Verification
+Route::get('/verify-email', [AuthController::class, 'showVerifyEmail'])->name('verification.notice');
+Route::post('/verify-email', [AuthController::class, 'verifyEmail'])->name('verification.verify');
+Route::post('/resend-verification', [AuthController::class, 'resendVerificationCode'])->name('verification.resend');
+
+// Forgot & Reset Password (6-Digit Code & Link)
+Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('password.request');
+Route::post('/forgot-password', [AuthController::class, 'sendResetCodeEmail'])->name('password.email');
+Route::get('/reset-password', [AuthController::class, 'showResetPassword'])->name('password.reset');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.update');
 
 // User Dashboard & Profile
 Route::middleware('auth')->group(function () {

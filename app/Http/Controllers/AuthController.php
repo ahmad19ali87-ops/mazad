@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Governorate;
 use App\Models\Listing;
 use App\Models\User;
+use App\Services\AuthMailService;
 use App\Services\SecurityMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,14 +15,18 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
+use Laravel\Socialite\Facades\Socialite;
+use Throwable;
 
 class AuthController extends Controller
 {
     protected SecurityMonitorService $securityMonitor;
+    protected AuthMailService $authMailService;
 
-    public function __construct(SecurityMonitorService $securityMonitor)
+    public function __construct(SecurityMonitorService $securityMonitor, AuthMailService $authMailService)
     {
         $this->securityMonitor = $securityMonitor;
+        $this->authMailService = $authMailService;
     }
 
     public function showLogin(): View|RedirectResponse
@@ -52,10 +57,27 @@ class AuthController extends Controller
             'password.required' => 'يرجى إدخال كلمة المرور',
         ]);
 
-        // Always remember session persistently so the user never gets logged out automatically
         $remember = true;
 
         if (Auth::attempt($credentials, $remember)) {
+            $user = Auth::user();
+
+            // Require email verification
+            if (!$user->is_verified) {
+                $code = (string) random_int(100000, 999999);
+                $user->update([
+                    'verification_code' => $code,
+                    'verification_code_expires_at' => now()->addMinutes(15),
+                ]);
+
+                $this->authMailService->sendVerificationCode($user, $code);
+                Auth::logout();
+                session(['pending_verification_email' => $user->email]);
+
+                return redirect()->route('verification.notice', ['email' => $user->email])
+                    ->with('warning', 'حسابك بحاجة إلى تفعيل. لقد أرسلنا رمز تحقق سداسي جديد إلى بريدك الإلكتروني.');
+            }
+
             // Record successful login & reset counters
             $this->securityMonitor->recordLoginAttempt($ip, $credentials['email'], true, $request->userAgent());
 
@@ -84,8 +106,8 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|min:3|max:100',
-            'email' => 'required|string|email|max:190|unique:users',
-            'phone' => 'required|string|min:9|max:25|unique:users',
+            'email' => 'required|string|email|max:190|unique:users,email',
+            'phone' => 'required|string|min:9|max:25|unique:users,phone',
             'password' => ['required', 'confirmed', Password::min(6)],
             'governorate' => 'nullable|string|max:100',
             'whatsapp' => 'nullable|string|max:30',
@@ -101,6 +123,8 @@ class AuthController extends Controller
             'password.min' => 'يجب ألا تقل كلمة المرور عن 6 خانات',
         ]);
 
+        $verificationCode = (string) random_int(100000, 999999);
+
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
@@ -110,19 +134,305 @@ class AuthController extends Controller
             'whatsapp' => $validated['whatsapp'] ?? $validated['phone'],
             'role' => $validated['role'] ?? 'user',
             'is_verified' => false,
+            'verification_code' => $verificationCode,
+            'verification_code_expires_at' => now()->addMinutes(15),
             'remember_contact_info' => true,
         ]);
 
-        Auth::login($user);
+        // Dispatch 6-digit verification code from info@ahmadinsights.online
+        $this->authMailService->sendVerificationCode($user, $verificationCode);
 
-        return redirect()->route('home')->with('success', 'أهلاً بك في منصة مزاد سوريا! تم إنشاء حسابك بنجاح.');
+        session(['pending_verification_email' => $user->email]);
+
+        return redirect()->route('verification.notice', ['email' => $user->email])
+            ->with('success', 'تم إنشاء الحساب بنجاح! تم إرسال رمز التحقق السداسي إلى بريدك الإلكتروني لتفعيل الحساب.');
     }
 
     /**
-     * Google Sign-in handler (Web OAuth / One-tap simulated)
+     * Show email verification screen
+     */
+    public function showVerifyEmail(Request $request): View|RedirectResponse
+    {
+        $email = $request->query('email') ?? session('pending_verification_email');
+        if (!$email) {
+            return redirect()->route('login');
+        }
+
+        $user = User::where('email', $email)->first();
+        if ($user && $user->is_verified) {
+            return redirect()->route('home')->with('info', 'حسابك مفعل بالفعل، يمكنك تسجيل الدخول.');
+        }
+
+        return view('auth.verify-email', compact('email'));
+    }
+
+    /**
+     * Verify email with 6-digit code
+     */
+    public function verifyEmail(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+        ], [
+            'code.required' => 'يرجى إدخال رمز التحقق السداسي',
+            'code.size' => 'رمز التحقق يجب أن يتكون من 6 أرقام بالضبط',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return back()->withErrors(['code' => 'المستخدم غير مسجل'])->withInput();
+        }
+
+        if ($user->is_verified) {
+            Auth::login($user, true);
+            return redirect()->route('home')->with('info', 'حسابك مفعل مسبقاً!');
+        }
+
+        if ($user->verification_code !== trim($request->code)) {
+            return back()->withErrors(['code' => 'رمز التحقق غير صحيح، يرجى التأكد وإعادة المحاولة.'])->withInput();
+        }
+
+        if ($user->verification_code_expires_at && $user->verification_code_expires_at->isPast()) {
+            return back()->withErrors(['code' => 'انتهت صلاحية رمز التحقق (الصلاحية 15 دقيقة). يرجى الضغط على زر إعادة الإرسال.'])->withInput();
+        }
+
+        // Activate user
+        $user->update([
+            'is_verified' => true,
+            'email_verified_at' => now(),
+            'verification_code' => null,
+            'verification_code_expires_at' => null,
+        ]);
+
+        session()->forget('pending_verification_email');
+        Auth::login($user, true);
+
+        return redirect()->route('home')->with('success', 'تهانينا ' . $user->name . '! تم تفعيل حسابك بنجاح وأصبحت جاهزاً للاستخدام.');
+    }
+
+    /**
+     * Resend 6-digit verification code
+     */
+    public function resendVerificationCode(Request $request): RedirectResponse
+    {
+        $email = $request->input('email') ?? session('pending_verification_email');
+        if (!$email) {
+            return back()->withErrors(['code' => 'يرجى تحديد البريد الإلكتروني']);
+        }
+
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return back()->withErrors(['code' => 'المستخدم غير مسجل']);
+        }
+
+        if ($user->is_verified) {
+            return redirect()->route('login')->with('info', 'الحساب مفعل بالفعل.');
+        }
+
+        $newCode = (string) random_int(100000, 999999);
+        $user->update([
+            'verification_code' => $newCode,
+            'verification_code_expires_at' => now()->addMinutes(15),
+        ]);
+
+        $this->authMailService->sendVerificationCode($user, $newCode);
+
+        return back()->with('success', 'تم إرسال رمز تحقق سداسي جديد إلى بريدك الإلكتروني بنجاح.');
+    }
+
+    /**
+     * Show Forgot Password Form
+     */
+    public function showForgotPassword(): View|RedirectResponse
+    {
+        if (Auth::check()) {
+            return redirect()->route('home');
+        }
+        return view('auth.forgot-password');
+    }
+
+    /**
+     * Send Password Reset (6-digit code + link)
+     */
+    public function sendResetCodeEmail(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ], [
+            'email.required' => 'يرجى إدخال البريد الإلكتروني',
+            'email.email' => 'يرجى إدخال بريد إلكتروني صالح',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return back()->withErrors(['email' => 'لم نتمكن من العثور على حساب مسجل بهذا البريد الإلكتروني.'])->withInput();
+        }
+
+        $resetCode = (string) random_int(100000, 999999);
+        $resetToken = Str::random(60);
+
+        $user->update([
+            'password_reset_code' => $resetCode,
+            'password_reset_token' => $resetToken,
+            'password_reset_expires_at' => now()->addMinutes(15),
+        ]);
+
+        $resetUrl = route('password.reset', [
+            'token' => $resetToken,
+            'email' => $user->email,
+        ]);
+
+        $this->authMailService->sendPasswordReset($user, $resetCode, $resetUrl);
+
+        return redirect()->route('password.reset', ['email' => $user->email])
+            ->with('success', 'تم إرسال رمز الاستعادة ورابط التعيين إلى بريدك الإلكتروني. يرجى مراجعة بريدك.');
+    }
+
+    /**
+     * Show Reset Password Screen (Accepts code or token)
+     */
+    public function showResetPassword(Request $request): View|RedirectResponse
+    {
+        if (Auth::check()) {
+            return redirect()->route('home');
+        }
+
+        $email = $request->query('email');
+        $token = $request->query('token');
+
+        return view('auth.reset-password', compact('email', 'token'));
+    }
+
+    /**
+     * Reset Password Action
+     */
+    public function resetPassword(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => ['required', 'confirmed', Password::min(6)],
+            'code' => 'nullable|string',
+            'token' => 'nullable|string',
+        ], [
+            'email.required' => 'يرجى إدخال البريد الإلكتروني',
+            'password.required' => 'يرجى إدخال كلمة المرور الجديدة',
+            'password.confirmed' => 'تأكيد كلمة المرور غير متطابق',
+            'password.min' => 'يجب ألا تقل كلمة المرور عن 6 أحرف',
+        ]);
+
+        if (!$request->filled('code') && !$request->filled('token')) {
+            return back()->withErrors(['code' => 'يرجى إدخال رمز التحقق السداسي أو استخدام الرابط المرسل لبريدك الإلكتروني'])->withInput();
+        }
+
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return back()->withErrors(['email' => 'المستخدم غير مسجل'])->withInput();
+        }
+
+        if ($user->password_reset_expires_at && $user->password_reset_expires_at->isPast()) {
+            return back()->withErrors(['code' => 'انتهت صلاحية رمز ورابط الاستعادة (الصلاحية 15 دقيقة). يرجى طلب استعادة جديدة.'])->withInput();
+        }
+
+        $valid = false;
+
+        // Check 6-digit code
+        if ($request->filled('code') && $user->password_reset_code && trim($request->code) === $user->password_reset_code) {
+            $valid = true;
+        }
+
+        // Check reset token
+        if ($request->filled('token') && $user->password_reset_token && $request->token === $user->password_reset_token) {
+            $valid = true;
+        }
+
+        if (!$valid) {
+            return back()->withErrors(['code' => 'رمز التحقق أو رابط الاستعادة غير صالح'])->withInput();
+        }
+
+        // Update password and clear reset data
+        $user->update([
+            'password' => Hash::make($request->password),
+            'password_reset_code' => null,
+            'password_reset_token' => null,
+            'password_reset_expires_at' => null,
+            'is_verified' => true,
+            'email_verified_at' => $user->email_verified_at ?: now(),
+        ]);
+
+        Auth::login($user, true);
+
+        return redirect()->route('home')->with('success', 'تمت إعادة تعيين كلمة المرور بنجاح وتم تسجيل دخولك.');
+    }
+
+    /**
+     * Redirect to Google OAuth Provider
+     */
+    public function redirectToGoogle(): RedirectResponse
+    {
+        return Socialite::driver('google')->redirect();
+    }
+
+    /**
+     * Google OAuth Callback
+     */
+    public function handleGoogleCallback(): RedirectResponse
+    {
+        try {
+            $googleUser = Socialite::driver('google')->user();
+        } catch (Throwable $e) {
+            return redirect()->route('login')->withErrors([
+                'email' => 'تعذر إتمام الدخول عبر Google: ' . $e->getMessage(),
+            ]);
+        }
+
+        $email = $googleUser->getEmail();
+        $googleId = $googleUser->getId();
+        $name = $googleUser->getName() ?: 'مستخدم Google';
+        $avatar = $googleUser->getAvatar();
+
+        $user = User::where('email', $email)
+            ->orWhere('google_id', $googleId)
+            ->first();
+
+        if ($user) {
+            $user->update([
+                'google_id' => $user->google_id ?: $googleId,
+                'avatar_url' => $user->avatar_url ?: $avatar,
+                'is_verified' => true,
+                'email_verified_at' => $user->email_verified_at ?: now(),
+            ]);
+        } else {
+            $user = User::create([
+                'name' => $name,
+                'email' => $email,
+                'google_id' => $googleId,
+                'avatar_url' => $avatar,
+                'phone' => '09' . random_int(11111111, 99999999),
+                'password' => Hash::make(Str::random(32)),
+                'role' => 'user',
+                'is_verified' => true,
+                'email_verified_at' => now(),
+                'remember_contact_info' => true,
+            ]);
+        }
+
+        Auth::login($user, true);
+
+        return redirect()->intended(route('home'))->with('success', 'تم تسجيل الدخول بحساب Google بنجاح! أهلاً بك، ' . $user->name);
+    }
+
+    /**
+     * Fast simulated or direct Google login fallback
      */
     public function googleLogin(Request $request): RedirectResponse
     {
+        if ($request->has('code') || $request->isMethod('get')) {
+            return $this->redirectToGoogle();
+        }
+
         $googleEmail = $request->input('email', 'google_user_' . Str::random(5) . '@gmail.com');
         $googleName = $request->input('name', 'مستخدم جوجل ' . Str::random(4));
         $googleId = $request->input('google_id', 'g_' . Str::random(12));
@@ -136,17 +446,20 @@ class AuthController extends Controller
             $user->update([
                 'google_id' => $user->google_id ?: $googleId,
                 'avatar_url' => $user->avatar_url ?: $avatarUrl,
+                'is_verified' => true,
+                'email_verified_at' => $user->email_verified_at ?: now(),
             ]);
         } else {
             $user = User::create([
                 'name' => $googleName,
                 'email' => $googleEmail,
-                'phone' => '09' . rand(11111111, 99999999),
-                'password' => Hash::make(Str::random(16)),
+                'phone' => '09' . random_int(11111111, 99999999),
+                'password' => Hash::make(Str::random(24)),
                 'google_id' => $googleId,
                 'avatar_url' => $avatarUrl,
                 'role' => 'user',
                 'is_verified' => true,
+                'email_verified_at' => now(),
                 'remember_contact_info' => true,
             ]);
         }
@@ -157,7 +470,7 @@ class AuthController extends Controller
     }
 
     /**
-     * User Central Dashboard (مشترياتي، مبيعاتي، إعلاناتي، الحسابات التي أتابعها، تذكر معلوماتي)
+     * User Central Dashboard
      */
     public function dashboard(Request $request): View|RedirectResponse
     {
@@ -183,10 +496,10 @@ class AuthController extends Controller
             'following' => $user->following()->count(),
         ];
 
-        // 2. Saved Listings (مشترياتي والمفضلة)
+        // 2. Saved Listings
         $savedListings = $user->savedListings()->with(['category', 'images', 'governorate', 'user'])->get();
 
-        // 3. Followed Sellers (الحسابات التي أتابعها)
+        // 3. Followed Sellers
         $followingSellers = $user->following()->withCount('listings')->get();
 
         // 4. Governorates for profile update

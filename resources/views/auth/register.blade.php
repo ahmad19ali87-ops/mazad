@@ -121,13 +121,17 @@
                 <div class="flex-grow border-t border-slate-200"></div>
             </div>
 
-            <form action="{{ route('auth.google') }}" method="POST">
-                @csrf
-                <button type="submit" class="w-full bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition border border-slate-300 shadow-sm flex items-center justify-center gap-2">
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-4 h-4" alt="Google">
-                    <span>التسجيل بنقرة واحدة باستخدام Google</span>
-                </button>
-            </form>
+            <a href="{{ route('auth.google.redirect') }}" class="w-full bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition border border-slate-300 shadow-sm flex items-center justify-center gap-2 block text-center">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-4 h-4 inline-block" alt="Google">
+                <span>التسجيل الفوري المباشر باستخدام Google</span>
+            </a>
+        </div>
+
+        <div class="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-200 text-center">
+            <p class="text-[11px] text-amber-800 font-medium">
+                <i class="fa-solid fa-envelope-circle-check text-amber-600 ml-1"></i>
+                عند التسجيل بالبريد، سيصلك رمز سداسي لتفعيل الحساب من بريدنا الرسمي: <strong class="text-rose-900">info@ahmadinsights.online</strong>
+            </p>
         </div>
 
         <div class="text-center mt-6 pt-6 border-t border-slate-100 text-xs text-slate-600">

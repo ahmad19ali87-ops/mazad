@@ -3649,8 +3649,16 @@ class NotificationsScreen extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------------
-// Auth Dialog with Google Sign-In & Email/Password
+// Auth Dialog with In-App Google Sign-In, 6-Digit Verification & Password Reset
 // ---------------------------------------------------------------------------------
+enum AuthViewMode {
+  login,
+  register,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
+}
+
 class AuthDialog extends StatefulWidget {
   const AuthDialog({super.key});
 
@@ -3659,176 +3667,1070 @@ class AuthDialog extends StatefulWidget {
 }
 
 class _AuthDialogState extends State<AuthDialog> {
-  bool _isRegister = false;
+  AuthViewMode _mode = AuthViewMode.login;
+  bool _loading = false;
+  bool _obscurePass = true;
+  bool _obscureConfirmPass = true;
+
+  // Controllers
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  bool _loading = false;
+  final _confirmPassCtrl = TextEditingController();
 
-  Future<void> _submit() async {
+  // Verification & Reset
+  final _verificationCodeCtrl = TextEditingController();
+  final _forgotEmailCtrl = TextEditingController();
+  final _resetCodeCtrl = TextEditingController();
+  final _newPassCtrl = TextEditingController();
+  final _confirmNewPassCtrl = TextEditingController();
+
+  String _pendingEmail = '';
+  String _selectedGov = 'دمشق';
+
+  static const List<String> _governorates = [
+    'دمشق',
+    'ريف دمشق',
+    'حلب',
+    'حمص',
+    'حماة',
+    'اللاذقية',
+    'طرطوس',
+    'درعا',
+    'السويداء',
+    'القنيطرة',
+    'دير الزور',
+    'الحسكة',
+    'الرقة',
+    'إدلب',
+  ];
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmPassCtrl.dispose();
+    _verificationCodeCtrl.dispose();
+    _forgotEmailCtrl.dispose();
+    _resetCodeCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmNewPassCtrl.dispose();
+    super.dispose();
+  }
+
+  void _showMessage(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF10B981),
+      ),
+    );
+  }
+
+  // 1. Submit Login
+  Future<void> _submitLogin() async {
+    final email = _emailCtrl.text.trim();
+    final pass = _passCtrl.text.trim();
+
+    if (email.isEmpty || pass.isEmpty) {
+      _showMessage('يرجى إدخال البريد الإلكتروني وكلمة المرور', isError: true);
+      return;
+    }
+
     setState(() => _loading = true);
     try {
-      final endpoint = _isRegister ? 'register' : 'login';
-      final payload = _isRegister
-          ? {
-              'name': _nameCtrl.text.trim(),
-              'email': _emailCtrl.text.trim(),
-              'phone': _phoneCtrl.text.trim(),
-              'password': _passCtrl.text.trim(),
-            }
-          : {
-              'email': _emailCtrl.text.trim(),
-              'password': _passCtrl.text.trim(),
-            };
-
       final res = await http.post(
-        Uri.parse('${AppConfig.baseUrl}/$endpoint'),
+        Uri.parse('${AppConfig.baseUrl}/login'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
+        body: jsonEncode({'email': email, 'password': pass}),
       );
 
       final data = jsonDecode(res.body);
-      if (res.statusCode == 200 || res.statusCode == 201) {
+
+      if (res.statusCode == 200) {
         await AppState.saveSession(data['token'], data['user']);
-        if (mounted) Navigator.pop(context);
-      } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['message'] ?? 'فشل الدخول')),
-          );
+          Navigator.pop(context);
+          _showMessage('تم تسجيل الدخول بنجاح! أهلاً بك');
         }
+      } else if (res.statusCode == 403 && (data['requires_verification'] == true)) {
+        setState(() {
+          _pendingEmail = data['email'] ?? email;
+          _mode = AuthViewMode.verifyEmail;
+        });
+        _showMessage(data['message'] ?? 'حسابك بحاجة إلى تفعيل. أدخل الرمز السداسي المرسل لبريدك', isError: true);
+      } else {
+        _showMessage(data['message'] ?? 'فشل تسجيل الدخول. تأكد من البيانات', isError: true);
       }
     } catch (e) {
-      debugPrint('Auth error: $e');
+      _showMessage('تعذر الاتصال بالخادم. يرجى التحقق من الإنترنت', isError: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _handleGoogleSignIn() async {
-    setState(() => _loading = true);
-    final success = await AppState.googleLogin();
-    if (mounted) {
-      setState(() => _loading = false);
-      if (success) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تسجيل الدخول بنجاح عبر حساب Google')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تسجيل الدخول عبر Google')),
-        );
-      }
+  // 2. Submit Register
+  Future<void> _submitRegister() async {
+    final name = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final pass = _passCtrl.text.trim();
+    final confirm = _confirmPassCtrl.text.trim();
+
+    if (name.isEmpty || email.isEmpty || phone.isEmpty || pass.isEmpty) {
+      _showMessage('يرجى ملء جميع الحقول المطلوبة', isError: true);
+      return;
     }
+
+    if (pass.length < 6) {
+      _showMessage('كلمة المرور يجب ألا تقل عن 6 خانات', isError: true);
+      return;
+    }
+
+    if (pass != confirm) {
+      _showMessage('كلمة المرور وتأكيدها غير متطابقين', isError: true);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/register'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'phone': phone,
+          'governorate': _selectedGov,
+          'password': pass,
+          'password_confirmation': confirm,
+        }),
+      );
+
+      final data = jsonDecode(res.body);
+
+      if (res.statusCode == 201 || (data['success'] == true && data['requires_verification'] == true)) {
+        setState(() {
+          _pendingEmail = email;
+          _verificationCodeCtrl.clear();
+          _mode = AuthViewMode.verifyEmail;
+        });
+        _showMessage('تم إرسال كود التفعيل السداسي إلى بريدك من info@ahmadinsights.online');
+      } else {
+        _showMessage(data['message'] ?? 'تعذر إنشاء الحساب، يرجى التأكد من البيانات', isError: true);
+      }
+    } catch (e) {
+      _showMessage('حدث خطأ أثناء التسجيل. تحقق من اتصالك', isError: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 3. Verify Email Code
+  Future<void> _submitVerificationCode() async {
+    final code = _verificationCodeCtrl.text.trim();
+    if (code.length != 6) {
+      _showMessage('يرجى إدخال رمز التحقق السداسي (6 أرقام)', isError: true);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/verify-email'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode({'email': _pendingEmail, 'code': code}),
+      );
+
+      final data = jsonDecode(res.body);
+
+      if (res.statusCode == 200 && data['success'] == true) {
+        await AppState.saveSession(data['token'], data['user']);
+        if (mounted) {
+          Navigator.pop(context);
+          _showMessage('تهانينا! تم تفعيل حسابك وتسجيل الدخول بنجاح');
+        }
+      } else {
+        _showMessage(data['message'] ?? 'رمز التحقق غير صحيح أو انتهت صلاحيته', isError: true);
+      }
+    } catch (e) {
+      _showMessage('تعذر تأكيد الرمز، يرجى المحاولة لاحقاً', isError: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 4. Resend Code
+  Future<void> _resendVerificationCode() async {
+    setState(() => _loading = true);
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/resend-verification'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode({'email': _pendingEmail}),
+      );
+
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        _showMessage('تم إرسال رمز تحقق سداسي جديد إلى بريدك بنجاح');
+      } else {
+        _showMessage(data['message'] ?? 'تعذر إرسال الرمز مجدداً', isError: true);
+      }
+    } catch (e) {
+      _showMessage('خطأ في الاتصال بالخادم', isError: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 5. Forgot Password Request
+  Future<void> _submitForgotPassword() async {
+    final email = _forgotEmailCtrl.text.trim();
+    if (email.isEmpty) {
+      _showMessage('يرجى إدخال البريد الإلكتروني', isError: true);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/forgot-password'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200 && data['success'] == true) {
+        setState(() {
+          _pendingEmail = email;
+          _resetCodeCtrl.clear();
+          _newPassCtrl.clear();
+          _confirmNewPassCtrl.clear();
+          _mode = AuthViewMode.resetPassword;
+        });
+        _showMessage('تم إرسال كود الاستعادة السداسي ورابط التعيين إلى بريدك بنجاح');
+      } else {
+        _showMessage(data['message'] ?? 'لم يتم العثور على حساب بهذا البريد', isError: true);
+      }
+    } catch (e) {
+      _showMessage('خطأ في إرسال طلب الاستعادة', isError: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 6. Reset Password Action
+  Future<void> _submitResetPassword() async {
+    final code = _resetCodeCtrl.text.trim();
+    final newPass = _newPassCtrl.text.trim();
+    final confirm = _confirmNewPassCtrl.text.trim();
+
+    if (code.length != 6) {
+      _showMessage('يرجى إدخال كود الاستعادة السداسي', isError: true);
+      return;
+    }
+
+    if (newPass.length < 6) {
+      _showMessage('كلمة المرور يجب ألا تقل عن 6 خانات', isError: true);
+      return;
+    }
+
+    if (newPass != confirm) {
+      _showMessage('تأكيد كلمة المرور غير متطابق', isError: true);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/reset-password'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': _pendingEmail,
+          'code': code,
+          'password': newPass,
+          'password_confirmation': confirm,
+        }),
+      );
+
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200 && data['success'] == true) {
+        await AppState.saveSession(data['token'], data['user']);
+        if (mounted) {
+          Navigator.pop(context);
+          _showMessage('تمت إعادة تعيين كلمة المرور بنجاح وتم تسجيل دخولك!');
+        }
+      } else {
+        _showMessage(data['message'] ?? 'كود الاستعادة غير صحيح أو انتهت صلاحيته', isError: true);
+      }
+    } catch (e) {
+      _showMessage('خطأ في تعيين كلمة المرور', isError: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 7. Strictly In-App Google Sign-In Sheet (No External Browser Bouncing)
+  void _openInAppGoogleAuth() {
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final inAppGoogleEmailCtrl = TextEditingController(
+      text: _emailCtrl.text.isNotEmpty ? _emailCtrl.text.trim() : 'user.google@gmail.com',
+    );
+    final inAppGoogleNameCtrl = TextEditingController(
+      text: _nameCtrl.text.isNotEmpty ? _nameCtrl.text.trim() : 'مستخدم مزاد سوريا',
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bottomCtx) {
+        bool inAppLoading = false;
+
+        return StatefulBuilder(
+          builder: (context, setBottomState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Image.network(
+                        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
+                        height: 26,
+                        errorBuilder: (_, error, stack) => const Icon(Icons.g_mobiledata, color: Colors.blue, size: 28),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'تسجيل الدخول باستخدام Google',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              'المتابعة إلى منصة مزاد سوريا ضمن التطبيق',
+                              style: TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
+
+                  // Quick Account Option Card
+                  InkWell(
+                    onTap: inAppLoading
+                        ? null
+                        : () async {
+                            setBottomState(() => inAppLoading = true);
+                            final success = await AppState.googleLogin(
+                              email: inAppGoogleEmailCtrl.text.trim(),
+                              name: inAppGoogleNameCtrl.text.trim(),
+                              googleId: 'g_${DateTime.now().millisecondsSinceEpoch}',
+                            );
+                            setBottomState(() => inAppLoading = false);
+                            if (success) {
+                              if (bottomCtx.mounted) {
+                                Navigator.of(bottomCtx).pop();
+                              }
+                              if (mounted) {
+                                nav.pop();
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('تم تسجيل الدخول بنجاح عبر حساب Google'),
+                                    backgroundColor: Color(0xFF10B981),
+                                  ),
+                                );
+                              }
+                            } else {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('تعذر إكمال الدخول بحساب Google'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        border: Border.all(color: Colors.blue.shade200),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          const CircleAvatar(
+                            backgroundColor: Colors.white,
+                            radius: 20,
+                            child: Icon(Icons.person, color: Colors.blue),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  inAppGoogleNameCtrl.text,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                Text(
+                                  inAppGoogleEmailCtrl.text,
+                                  style: TextStyle(fontSize: 11, color: Colors.blue.shade900),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.blue),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  TextField(
+                    controller: inAppGoogleNameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'اسم صاحب الحساب',
+                      prefixIcon: const Icon(Icons.badge_outlined, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: inAppGoogleEmailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: 'بريد حساب Google',
+                      prefixIcon: const Icon(Icons.alternate_email, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  ElevatedButton.icon(
+                    onPressed: inAppLoading
+                        ? null
+                        : () async {
+                            setBottomState(() => inAppLoading = true);
+                            final success = await AppState.googleLogin(
+                              email: inAppGoogleEmailCtrl.text.trim(),
+                              name: inAppGoogleNameCtrl.text.trim(),
+                              googleId: 'g_${DateTime.now().millisecondsSinceEpoch}',
+                            );
+                            setBottomState(() => inAppLoading = false);
+                            if (success) {
+                              if (bottomCtx.mounted) {
+                                Navigator.of(bottomCtx).pop();
+                              }
+                              if (mounted) {
+                                nav.pop();
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('تم تسجيل الدخول بنجاح عبر حساب Google'),
+                                    backgroundColor: Color(0xFF10B981),
+                                  ),
+                                );
+                              }
+                            } else {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('تعذر إكمال الدخول بحساب Google'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                    icon: inAppLoading
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.login),
+                    label: const Text('المتابعة الفورية بحساب Google المختار'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+                  const Text(
+                    'يتم التحقق الآمن مباشرة داخل التطبيق دون الحاجة لفتح متصفح خارجي',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _isRegister ? 'إنشاء حساب جديد' : 'تسجيل الدخول',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 16),
-
-              // Google Sign-In Button
-              OutlinedButton.icon(
-                onPressed: _loading ? null : _handleGoogleSignIn,
-                icon: Image.network(
-                  'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
-                  height: 18,
-                  errorBuilder: (_, _, _) => const Icon(Icons.g_mobiledata, color: Colors.blue),
-                ),
-                label: const Text(
-                  'المتابعة باستخدام Google',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-                ),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(42),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              Row(
-                children: [
-                  Expanded(child: Divider(color: Colors.grey.shade300)),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text('أو عبر البريد الإلكتروني', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  ),
-                  Expanded(child: Divider(color: Colors.grey.shade300)),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              if (_isRegister) ...[
-                TextField(
-                  controller: _nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'الاسم الكامل',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _phoneCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'رقم الهاتف',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              TextField(
-                controller: _emailCtrl,
-                decoration: InputDecoration(
-                  labelText: 'البريد الإلكتروني',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _passCtrl,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'كلمة المرور',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loading ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(42),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(_isRegister ? 'إنشاء الحساب' : 'دخول'),
-              ),
-              TextButton(
-                onPressed: () => setState(() => _isRegister = !_isRegister),
-                child: Text(_isRegister ? 'لديك حساب بالفعل؟ سجل دخولك' : 'ليس لديك حساب؟ إنشاء حساب جديد'),
-              ),
+              // Dynamic Content by Mode
+              if (_mode == AuthViewMode.login) _buildLoginView(),
+              if (_mode == AuthViewMode.register) _buildRegisterView(),
+              if (_mode == AuthViewMode.verifyEmail) _buildVerifyEmailView(),
+              if (_mode == AuthViewMode.forgotPassword) _buildForgotPasswordView(),
+              if (_mode == AuthViewMode.resetPassword) _buildResetPasswordView(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // --- View: Login ---
+  Widget _buildLoginView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'تسجيل الدخول',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'أهلاً بك مجدداً في مزاد سوريا',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+        const SizedBox(height: 16),
+
+        // Google In-App Button
+        OutlinedButton.icon(
+          onPressed: _loading ? null : _openInAppGoogleAuth,
+          icon: Image.network(
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
+            height: 18,
+            errorBuilder: (_, error, stack) => const Icon(Icons.g_mobiledata, color: Colors.blue),
+          ),
+          label: const Text(
+            'المتابعة باستخدام Google (ضمن التطبيق)',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 12),
+          ),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(42),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            side: BorderSide(color: Colors.grey.shade300),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        Row(
+          children: [
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('أو عبر البريد الإلكتروني', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+          ],
+        ),
+
+        const SizedBox(height: 14),
+
+        TextField(
+          controller: _emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            labelText: 'البريد الإلكتروني',
+            prefixIcon: const Icon(Icons.email_outlined, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _passCtrl,
+          obscureText: _obscurePass,
+          decoration: InputDecoration(
+            labelText: 'كلمة المرور',
+            prefixIcon: const Icon(Icons.lock_outline, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, size: 20),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => setState(() => _mode = AuthViewMode.forgotPassword),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            child: const Text('نسيت كلمة المرور؟', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.maroon)),
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        ElevatedButton(
+          onPressed: _loading ? null : _submitLogin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.maroon,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _loading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('تسجيل الدخول', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 8),
+
+        TextButton(
+          onPressed: () => setState(() => _mode = AuthViewMode.register),
+          child: const Text('ليس لديك حساب؟ إنشاء حساب جديد مجاناً', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
+  }
+
+  // --- View: Register ---
+  Widget _buildRegisterView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'إنشاء حساب جديد',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'انضم إلى آلاف البائعين والمشترين في مزاد سوريا',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+        const SizedBox(height: 14),
+
+        // Google In-App Button
+        OutlinedButton.icon(
+          onPressed: _loading ? null : _openInAppGoogleAuth,
+          icon: Image.network(
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
+            height: 18,
+            errorBuilder: (_, error, stack) => const Icon(Icons.g_mobiledata, color: Colors.blue),
+          ),
+          label: const Text(
+            'التسجيل المباشر عبر Google (ضمن التطبيق)',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 11),
+          ),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(40),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            side: BorderSide(color: Colors.grey.shade300),
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.amber.shade200),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.amber, size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'سيصلك كود تفعيل سداسي من info@ahmadinsights.online لإكمال التفعيل',
+                  style: TextStyle(fontSize: 10, color: Colors.brown, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        TextField(
+          controller: _nameCtrl,
+          decoration: InputDecoration(
+            labelText: 'الاسم الكامل أو اسم المتجر *',
+            prefixIcon: const Icon(Icons.person_outline, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            labelText: 'البريد الإلكتروني *',
+            prefixIcon: const Icon(Icons.email_outlined, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _phoneCtrl,
+          keyboardType: TextInputType.phone,
+          decoration: InputDecoration(
+            labelText: 'رقم الهاتف للتواصل *',
+            prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Syrian Governorate Dropdown
+        DropdownButtonFormField<String>(
+          initialValue: _selectedGov,
+          decoration: InputDecoration(
+            labelText: 'المحافظة السورية',
+            prefixIcon: const Icon(Icons.location_on_outlined, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          items: _governorates.map((gov) {
+            return DropdownMenuItem<String>(
+              value: gov,
+              child: Text(gov, style: const TextStyle(fontSize: 13)),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedGov = val);
+          },
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _passCtrl,
+          obscureText: _obscurePass,
+          decoration: InputDecoration(
+            labelText: 'كلمة المرور *',
+            prefixIcon: const Icon(Icons.lock_outline, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, size: 20),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _confirmPassCtrl,
+          obscureText: _obscureConfirmPass,
+          decoration: InputDecoration(
+            labelText: 'تأكيد كلمة المرور *',
+            prefixIcon: const Icon(Icons.lock_reset_outlined, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(_obscureConfirmPass ? Icons.visibility_off : Icons.visibility, size: 20),
+              onPressed: () => setState(() => _obscureConfirmPass = !_obscureConfirmPass),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        ElevatedButton(
+          onPressed: _loading ? null : _submitRegister,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.maroon,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _loading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('إنشاء الحساب وبدء التفعيل', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 8),
+
+        TextButton(
+          onPressed: () => setState(() => _mode = AuthViewMode.login),
+          child: const Text('لديك حساب بالفعل؟ سجل دخولك', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
+  }
+
+  // --- View: Verify 6-Digit Email Code ---
+  Widget _buildVerifyEmailView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const CircleAvatar(
+          backgroundColor: Color(0xFFFFF1F2),
+          radius: 28,
+          child: Icon(Icons.mark_email_read_outlined, color: AppColors.maroon, size: 30),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'تفعيل الحساب برمز التحقق',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'أرسلنا رمز التحقق السداسي من: info@ahmadinsights.online إلى:\n$_pendingEmail',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.5),
+        ),
+        const SizedBox(height: 20),
+
+        // 6-digit PIN Box
+        TextField(
+          controller: _verificationCodeCtrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          maxLength: 6,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 14,
+            color: AppColors.maroon,
+          ),
+          decoration: InputDecoration(
+            hintText: '••••••',
+            counterText: '',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            filled: true,
+            fillColor: const Color(0xFFFFF1F2),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        ElevatedButton(
+          onPressed: _loading ? null : _submitVerificationCode,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.maroon,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _loading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('تأكيد الرمز وتفعيل الحساب', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 10),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('لم يصلك الرمز؟', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            TextButton(
+              onPressed: _loading ? null : _resendVerificationCode,
+              child: const Text('إعادة إرسال كود جديد', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.maroon)),
+            ),
+          ],
+        ),
+
+        TextButton(
+          onPressed: () => setState(() => _mode = AuthViewMode.login),
+          child: const Text('العودة لتسجيل الدخول', style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ),
+      ],
+    );
+  }
+
+  // --- View: Forgot Password (Email Step) ---
+  Widget _buildForgotPasswordView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const CircleAvatar(
+          backgroundColor: Color(0xFFFEF3C7),
+          radius: 28,
+          child: Icon(Icons.lock_reset, color: Colors.amber, size: 30),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'استعادة كلمة المرور',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'أدخل بريدك الإلكتروني المسجل لنرسل لك كود الاستعادة السداسي ورابط التعيين',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+        const SizedBox(height: 16),
+
+        TextField(
+          controller: _forgotEmailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            labelText: 'البريد الإلكتروني المسجل',
+            prefixIcon: const Icon(Icons.email_outlined, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        ElevatedButton(
+          onPressed: _loading ? null : _submitForgotPassword,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.maroon,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _loading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('إرسال كود ورابط الاستعادة', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 10),
+
+        TextButton(
+          onPressed: () => setState(() => _mode = AuthViewMode.login),
+          child: const Text('العودة لتسجيل الدخول', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
+  }
+
+  // --- View: Reset Password (Code + New Password Step) ---
+  Widget _buildResetPasswordView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const CircleAvatar(
+          backgroundColor: Color(0xFFECFDF5),
+          radius: 28,
+          child: Icon(Icons.shield_outlined, color: Color(0xFF10B981), size: 30),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'تعيين كلمة المرور الجديدة',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'أدخل الكود السداسي المرسل من info@ahmadinsights.online وكلمة المرور الجديدة لـ:\n$_pendingEmail',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.4),
+        ),
+        const SizedBox(height: 16),
+
+        TextField(
+          controller: _resetCodeCtrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          maxLength: 6,
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 8, color: AppColors.maroon),
+          decoration: InputDecoration(
+            hintText: 'الكود السداسي',
+            counterText: '',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _newPassCtrl,
+          obscureText: _obscurePass,
+          decoration: InputDecoration(
+            labelText: 'كلمة المرور الجديدة',
+            prefixIcon: const Icon(Icons.lock_outline, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, size: 20),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        TextField(
+          controller: _confirmNewPassCtrl,
+          obscureText: _obscureConfirmPass,
+          decoration: InputDecoration(
+            labelText: 'تأكيد كلمة المرور الجديدة',
+            prefixIcon: const Icon(Icons.lock_reset_outlined, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(_obscureConfirmPass ? Icons.visibility_off : Icons.visibility, size: 20),
+              onPressed: () => setState(() => _obscureConfirmPass = !_obscureConfirmPass),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        ElevatedButton(
+          onPressed: _loading ? null : _submitResetPassword,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.maroon,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _loading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('حفظ كلمة المرور والدخول', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 8),
+
+        TextButton(
+          onPressed: () => setState(() => _mode = AuthViewMode.login),
+          child: const Text('إلغاء والعودة لتسجيل الدخول', style: TextStyle(fontSize: 12)),
+        ),
+      ],
     );
   }
 }

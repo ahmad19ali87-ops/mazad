@@ -30,8 +30,14 @@ class User extends Authenticatable
         'bio',
         'whatsapp',
         'is_verified',
+        'email_verified_at',
         'governorate',
         'remember_contact_info',
+        'verification_code',
+        'verification_code_expires_at',
+        'password_reset_code',
+        'password_reset_token',
+        'password_reset_expires_at',
     ];
 
     /**
@@ -42,6 +48,9 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'verification_code',
+        'password_reset_code',
+        'password_reset_token',
     ];
 
     /**
@@ -56,6 +65,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_verified' => 'boolean',
             'remember_contact_info' => 'boolean',
+            'verification_code_expires_at' => 'datetime',
+            'password_reset_expires_at' => 'datetime',
         ];
     }
 

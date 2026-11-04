@@ -55,6 +55,9 @@
                     <input type="checkbox" name="remember" class="rounded text-brand-500">
                     <span>تذكرني على هذا الجهاز</span>
                 </label>
+                <a href="{{ route('password.request') }}" class="text-brand-600 hover:text-brand-700 hover:underline font-bold">
+                    نسيت كلمة المرور؟
+                </a>
             </div>
 
             <button type="submit" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2 mt-2">
@@ -71,13 +74,10 @@
                 <div class="flex-grow border-t border-slate-200"></div>
             </div>
 
-            <form action="{{ route('auth.google') }}" method="POST">
-                @csrf
-                <button type="submit" class="w-full bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition border border-slate-300 shadow-sm flex items-center justify-center gap-2">
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-4 h-4" alt="Google">
-                    <span>تسجيل الدخول السريع باستخدام Google</span>
-                </button>
-            </form>
+            <a href="{{ route('auth.google.redirect') }}" class="w-full bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition border border-slate-300 shadow-sm flex items-center justify-center gap-2 block text-center">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-4 h-4 inline-block" alt="Google">
+                <span>المتابعة والتسجيل السريع باستخدام Google</span>
+            </a>
         </div>
 
         <div class="text-center mt-6 pt-6 border-t border-slate-100 text-xs text-slate-600">

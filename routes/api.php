@@ -9,6 +9,10 @@ Route::get('/banners', [ApiController::class, 'banners']);
 Route::post('/register', [ApiController::class, 'register']);
 Route::post('/login', [ApiController::class, 'login']);
 Route::post('/auth/google', [ApiController::class, 'googleLogin']);
+Route::post('/verify-email', [ApiController::class, 'verifyEmail']);
+Route::post('/resend-verification', [ApiController::class, 'resendVerification']);
+Route::post('/forgot-password', [ApiController::class, 'forgotPassword']);
+Route::post('/reset-password', [ApiController::class, 'resetPassword']);
 
 Route::get('/categories', [ApiController::class, 'categories']);
 Route::get('/locations', [ApiController::class, 'locations']);
