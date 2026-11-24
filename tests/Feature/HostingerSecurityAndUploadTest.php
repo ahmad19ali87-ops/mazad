@@ -38,6 +38,50 @@ class HostingerSecurityAndUploadTest extends TestCase
     }
 
     /**
+     * Test genuine JPEG with XMP metadata (<?xpacket) and binary <? sequences passes without banning IP.
+     */
+    public function test_jpeg_with_xmp_metadata_and_binary_sequences_does_not_ban_ip(): void
+    {
+        $fileUploadService = app(SecureFileUploadService::class);
+        $testIp = '198.51.100.42';
+
+        // Create a real GD JPEG first, then inject legitimate XMP <?xpacket metadata + binary <? bytes
+        $gdImg = imagecreatetruecolor(100, 100);
+        ob_start();
+        imagejpeg($gdImg, null, 85);
+        $jpegBytes = ob_get_clean();
+        imagedestroy($gdImg);
+
+        // Append legitimate camera XMP packet + random binary bytes containing 0x3C 0x3F
+        $jpegWithXmp = substr($jpegBytes, 0, -2)
+            . "<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?><x:xmpmeta>CameraPhoto</x:xmpmeta><?xpacket end='w'?>"
+            . "\x3C\x3F\x8A\x3C\x3F\xFF"
+            . "\xFF\xD9";
+
+        $file = UploadedFile::fake()->createWithContent('IMG_20261125_CAMERA.jpg', $jpegWithXmp);
+        $result = $fileUploadService->inspect($file, $testIp);
+
+        $this->assertTrue($result['is_safe'], 'Legitimate JPEG with XMP metadata should pass inspection: ' . ($result['reason'] ?? ''));
+        $this->assertDatabaseMissing('blocked_ips', ['ip_address' => $testIp]);
+    }
+
+    /**
+     * Test a single corrupted/invalid image is rejected gracefully without banning the user IP.
+     */
+    public function test_corrupted_image_rejection_does_not_ban_ip(): void
+    {
+        $fileUploadService = app(SecureFileUploadService::class);
+        $testIp = '198.51.100.43';
+
+        // JPEG magic bytes only, invalid image structure
+        $corrupted = UploadedFile::fake()->createWithContent('broken.jpg', "\xFF\xD8\xFF\xE0" . str_repeat('A', 64));
+        $result = $fileUploadService->inspect($corrupted, $testIp);
+
+        $this->assertFalse($result['is_safe']);
+        $this->assertDatabaseMissing('blocked_ips', ['ip_address' => $testIp]);
+    }
+
+    /**
      * Test double extension attack (e.g. exploit.php.jpg) is blocked immediately.
      */
     public function test_double_extension_attack_is_blocked(): void

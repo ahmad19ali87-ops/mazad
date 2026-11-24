@@ -10,6 +10,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ListingService
 {
@@ -103,7 +104,9 @@ class ListingService
                 $inspection = $this->fileUploadService->inspect($file);
                 if (!$inspection['is_safe']) {
                     \Illuminate\Support\Facades\Log::warning("Blocked unsafe file upload for listing {$listing->id}: " . $inspection['reason']);
-                    continue;
+                    throw ValidationException::withMessages([
+                        'images' => [$inspection['reason'] ?? 'تم رفض الصورة المرفوعة لأنها غير صالحة.'],
+                    ]);
                 }
 
                 // Safely store with UUID and sanitization

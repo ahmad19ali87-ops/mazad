@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Post, Edit, and Manage Listings
     Route::post('/listings', [ApiController::class, 'storeListing']);
     Route::put('/listings/{id}', [ApiController::class, 'updateListing']);
+    Route::post('/listings/{id}', [ApiController::class, 'updateListing']);
     Route::delete('/listings/{id}', [ApiController::class, 'destroyListing']);
     Route::get('/my-listings', [ApiController::class, 'myListings']);
     Route::post('/listings/{id}/sold', [ApiController::class, 'toggleSold']);

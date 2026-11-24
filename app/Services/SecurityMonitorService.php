@@ -96,7 +96,8 @@ class SecurityMonitorService
     public function inspectRequest(Request $request): ?string
     {
         $uri = $request->getRequestUri();
-        $payload = json_encode($request->all(), JSON_UNESCAPED_UNICODE);
+        // Inspect text inputs only (exclude UploadedFile binary objects which are inspected by SecureFileUploadService)
+        $payload = json_encode($request->input(), JSON_UNESCAPED_UNICODE) ?: '';
         $userAgent = $request->userAgent() ?? '';
         $ip = $request->ip();
 
@@ -123,21 +124,15 @@ class SecurityMonitorService
 
         // 3. SQL Injection patterns
         $sqliPatterns = [
-            '/(\%27)|(\')|(\-\-)|(\%23)|(#)/i',
             '/\b(union(\s+all)?\s+select)\b/i',
-            '/\b(select\s+.*\s+from\s+.*\b)/i',
             '/\b(drop\s+table|delete\s+from|insert\s+into|truncate\s+table)\b/i',
             '/\b(exec(\s|\+)+(s|x)p\w+)\b/i',
-            '/\b(or\s+[\'"]?1[\'"]?\s*=\s*[\'"]?1)\b/i',
+            '/(\%27|\')\s*(or|and)\s+[\'"]?\d+[\'"]?\s*=\s*[\'"]?\d+/i',
         ];
         foreach ($sqliPatterns as $pattern) {
-            // Test query string and input keys/values
             if (preg_match($pattern, $payload) || preg_match($pattern, $uri)) {
-                // Ignore legitimate rich text with quotes
-                if (str_contains($payload, 'union') || str_contains($payload, 'drop table') || str_contains($uri, 'union select') || str_contains($uri, 'or 1=1')) {
-                    $this->handleDetectedAttack($ip, 'sql_injection', 'critical', $request, 'رصد محاولة حقن استعلامات SQL مشبوهة');
-                    return 'sql_injection';
-                }
+                $this->handleDetectedAttack($ip, 'sql_injection', 'critical', $request, 'رصد محاولة حقن استعلامات SQL مشبوهة');
+                return 'sql_injection';
             }
         }
 

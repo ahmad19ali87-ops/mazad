@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2508,9 +2509,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   List<dynamic> _categories = [];
   List<dynamic> _governorates = [];
   List<dynamic> _regions = [];
-  final List<String> _selectedImages = [
-    'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=600&q=80',
-  ];
+  final ImagePicker _imagePicker = ImagePicker();
+  final List<XFile> _selectedImages = [];
   bool _isLoading = false;
 
   @override
@@ -2578,6 +2578,20 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       return;
     }
 
+    final selectedCatCheck = _categories.firstWhere((c) => c['id'] == _selectedCategoryId, orElse: () => {});
+    final catSlugCheck = selectedCatCheck['slug'] ?? '';
+    final isJobsOrWanted = _listingType == 'wanted' ||
+        _listingType == 'rent_wanted' ||
+        catSlugCheck == 'services-jobs' ||
+        catSlugCheck == 'jobs-employment';
+
+    if (!isJobsOrWanted && _selectedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى إضافة صورة واحدة على الأقل للسلعة من جهازك')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       final uri = Uri.parse('${AppConfig.baseUrl}/listings');
@@ -2620,11 +2634,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         request.fields['phone'] = _phoneController.text.trim();
       }
 
-      request.files.add(http.MultipartFile.fromString(
-        'images[0]',
-        'dummy content',
-        filename: 'sample.jpg',
-      ));
+      for (int i = 0; i < _selectedImages.length; i++) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'images[$i]',
+          _selectedImages[i].path,
+        ));
+      }
 
       final streamedRes = await request.send();
       final res = await http.Response.fromStream(streamedRes);
@@ -2637,15 +2652,33 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           Navigator.pop(context);
         }
       } else {
-        final err = jsonDecode(res.body);
+        String errMsg = 'فشل نشر الإعلان';
+        try {
+          final err = jsonDecode(res.body);
+          if (err is Map) {
+            if (err['errors'] is Map && (err['errors'] as Map).isNotEmpty) {
+              final firstErr = (err['errors'] as Map).values.first;
+              if (firstErr is List && firstErr.isNotEmpty) {
+                errMsg = firstErr.first.toString();
+              }
+            } else if (err['message'] != null) {
+              errMsg = err['message'].toString();
+            }
+          }
+        } catch (_) {}
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(err['message'] ?? 'فشل نشر الإعلان')),
+            SnackBar(content: Text(errMsg)),
           );
         }
       }
     } catch (e) {
       debugPrint('Submit error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('حدث خطأ أثناء الاتصال بالخادم، يرجى المحاولة مرة أخرى')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -2941,8 +2974,14 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Interactive Image Manager with 'X' Remove Button
-          const Text('صور السلعة والمعاينة (اضغط X لإزالة أي صورة) *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          // Interactive Local Device Image Manager (Gallery Multi-Select + Camera)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('صور السلعة من جهازك (حتى 10 صور) *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text('${_selectedImages.length}/10', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+            ],
+          ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
@@ -2961,7 +3000,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                       scrollDirection: Axis.horizontal,
                       itemCount: _selectedImages.length,
                       itemBuilder: (context, idx) {
-                        final url = _selectedImages[idx];
+                        final imageFile = _selectedImages[idx];
                         return Container(
                           width: 85,
                           margin: const EdgeInsets.only(left: 10),
@@ -2969,8 +3008,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
-                                child: Image.network(
-                                  url,
+                                child: Image.file(
+                                  File(imageFile.path),
                                   width: 85,
                                   height: 85,
                                   fit: BoxFit.cover,
@@ -2982,6 +3021,19 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                                   ),
                                 ),
                               ),
+                              if (idx == 0)
+                                Positioned(
+                                  bottom: 12,
+                                  right: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.maroon.withValues(alpha: 0.85),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('رئيسية', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
                               // 'X' Remove button
                               Positioned(
                                 top: 2,
@@ -3011,18 +3063,37 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                 else
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('لم يتم إضافة أي صور بعد. أضف صورة أو أكثر لزيادة سرعة بيع سلعتك.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    child: Text('لم يتم اختيار أي صور بعد. يمكنك تحديد عدة صور دفعة واحدة من المعرض أو التصوير بالكاميرا.', style: TextStyle(fontSize: 11, color: Colors.grey)),
                   ),
                 const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _showAddImageDialog,
-                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 16),
-                  label: const Text('إضافة صورة للسلعة', style: TextStyle(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.maroon,
-                    side: BorderSide(color: AppColors.maroon),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickImagesFromGallery,
+                        icon: const Icon(Icons.photo_library_rounded, size: 16),
+                        label: const Text('اختيار من المعرض (متعدد)', style: TextStyle(fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.maroon,
+                          side: BorderSide(color: AppColors.maroon),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickImageFromCamera,
+                        icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                        label: const Text('التقاط بالكاميرا', style: TextStyle(fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.emerald,
+                          side: BorderSide(color: AppColors.emerald),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -3082,67 +3153,72 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     );
   }
 
-  void _showAddImageDialog() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة صورة للسلعة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('أدخل رابط الصورة أو اختر من النماذج:', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: ctrl,
-              decoration: InputDecoration(
-                hintText: 'https://example.com/image.jpg',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              children: [
-                ActionChip(
-                  label: const Text('🚗 صورة سيارة', style: TextStyle(fontSize: 10)),
-                  onPressed: () {
-                    ctrl.text = 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=600&q=80';
-                  },
-                ),
-                ActionChip(
-                  label: const Text('🏠 صورة عقار', style: TextStyle(fontSize: 10)),
-                  onPressed: () {
-                    ctrl.text = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=600&q=80';
-                  },
-                ),
-                ActionChip(
-                  label: const Text('📱 صورة هاتف', style: TextStyle(fontSize: 10)),
-                  onPressed: () {
-                    ctrl.text = 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=600&q=80';
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                setState(() => _selectedImages.add(ctrl.text.trim()));
-              }
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.maroon, foregroundColor: Colors.white),
-            child: const Text('إضافة'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _pickImagesFromGallery() async {
+    if (_selectedImages.length >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى هو 10 صور للإعلان الواحد')),
+      );
+      return;
+    }
+    try {
+      final List<XFile> picked = await _imagePicker.pickMultiImage(
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (picked.isEmpty) return;
+
+      int skipped = 0;
+      setState(() {
+        for (final file in picked) {
+          if (_selectedImages.length >= 10) {
+            skipped++;
+            continue;
+          }
+          if (!_selectedImages.any((e) => e.path == file.path)) {
+            _selectedImages.add(file);
+          }
+        }
+      });
+
+      if (skipped > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم اختيار الحد الأقصى (10 صور) وتجاهل الباقي')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر اختيار الصور من المعرض: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    if (_selectedImages.length >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى هو 10 صور للإعلان الواحد')),
+      );
+      return;
+    }
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (photo != null) {
+        setState(() => _selectedImages.add(photo));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر التقاط الصورة بالكاميرا: $e')),
+        );
+      }
+    }
   }
 }
 
@@ -5657,7 +5733,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
   List<dynamic> _regions = [];
   List<dynamic> _existingImages = [];
   final List<int> _deleteImageIds = [];
-  final List<String> _newImages = [];
+  final ImagePicker _imagePicker = ImagePicker();
+  final List<XFile> _newImages = [];
   bool _isLoading = false;
 
   @override
@@ -5736,28 +5813,46 @@ class _EditListingScreenState extends State<EditListingScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final payload = {
-        'title': _titleController.text.trim(),
-        'category_id': _selectedCategoryId,
-        if (_selectedSubcategoryId != null) 'subcategory_id': _selectedSubcategoryId,
-        'listing_type': _listingType,
-        'condition': _condition,
-        'price': _priceController.text.trim(),
-        'currency': _currency,
-        'description': _descController.text.trim(),
-        'governorate_id': _selectedGovernorateId,
-        if (_selectedRegionId != null) 'region_id': _selectedRegionId,
-        'district_name': _districtController.text.trim(),
-        'street_address': _streetController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'delete_image_ids': _deleteImageIds,
-      };
-
-      final res = await http.put(
+      final request = http.MultipartRequest(
+        'POST',
         Uri.parse('${AppConfig.baseUrl}/listings/${widget.listing['id']}'),
-        headers: AppState.authHeaders,
-        body: jsonEncode(payload),
       );
+      request.headers.addAll({
+        'Accept': 'application/json',
+        if (AppState.token != null) 'Authorization': 'Bearer ${AppState.token}',
+      });
+
+      request.fields['_method'] = 'PUT';
+      request.fields['title'] = _titleController.text.trim();
+      request.fields['category_id'] = _selectedCategoryId.toString();
+      if (_selectedSubcategoryId != null) {
+        request.fields['subcategory_id'] = _selectedSubcategoryId.toString();
+      }
+      request.fields['listing_type'] = _listingType;
+      request.fields['condition'] = _condition;
+      request.fields['price'] = _priceController.text.trim();
+      request.fields['currency'] = _currency;
+      request.fields['description'] = _descController.text.trim();
+      request.fields['governorate_id'] = _selectedGovernorateId.toString();
+      if (_selectedRegionId != null) {
+        request.fields['region_id'] = _selectedRegionId.toString();
+      }
+      request.fields['district_name'] = _districtController.text.trim();
+      request.fields['street_address'] = _streetController.text.trim();
+      request.fields['phone'] = _phoneController.text.trim();
+
+      for (int i = 0; i < _deleteImageIds.length; i++) {
+        request.fields['delete_image_ids[$i]'] = _deleteImageIds[i].toString();
+      }
+      for (int i = 0; i < _newImages.length; i++) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'images[$i]',
+          _newImages[i].path,
+        ));
+      }
+
+      final streamedRes = await request.send();
+      final res = await http.Response.fromStream(streamedRes);
 
       if (res.statusCode == 200) {
         if (mounted) {
@@ -5767,57 +5862,106 @@ class _EditListingScreenState extends State<EditListingScreen> {
           Navigator.pop(context, true);
         }
       } else {
-        final err = jsonDecode(res.body);
+        String errMsg = 'فشل حفظ التعديلات';
+        try {
+          final err = jsonDecode(res.body);
+          if (err is Map) {
+            if (err['errors'] is Map && (err['errors'] as Map).isNotEmpty) {
+              final firstErr = (err['errors'] as Map).values.first;
+              if (firstErr is List && firstErr.isNotEmpty) {
+                errMsg = firstErr.first.toString();
+              }
+            } else if (err['message'] != null) {
+              errMsg = err['message'].toString();
+            }
+          }
+        } catch (_) {}
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(err['message'] ?? 'فشل حفظ التعديلات')),
+            SnackBar(content: Text(errMsg)),
           );
         }
       }
     } catch (e) {
       debugPrint('Save error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('حدث خطأ أثناء الاتصال بالخادم')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showAddImageDialog() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة صورة جديدة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('أدخل رابط الصورة الإضافية:', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: ctrl,
-              decoration: InputDecoration(
-                hintText: 'https://example.com/image.jpg',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                setState(() => _newImages.add(ctrl.text.trim()));
-              }
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.maroon, foregroundColor: Colors.white),
-            child: const Text('إضافة'),
-          ),
-        ],
-      ),
-    );
+  int get _totalImagesCount => _existingImages.length + _newImages.length;
+
+  Future<void> _pickImagesFromGallery() async {
+    if (_totalImagesCount >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى هو 10 صور للإعلان الواحد')),
+      );
+      return;
+    }
+    try {
+      final List<XFile> picked = await _imagePicker.pickMultiImage(
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (picked.isEmpty) return;
+
+      int skipped = 0;
+      setState(() {
+        for (final file in picked) {
+          if (_totalImagesCount >= 10) {
+            skipped++;
+            continue;
+          }
+          if (!_newImages.any((e) => e.path == file.path)) {
+            _newImages.add(file);
+          }
+        }
+      });
+
+      if (skipped > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم اختيار الحد الأقصى (10 صور) وتجاهل الباقي')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر اختيار الصور من المعرض: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    if (_totalImagesCount >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى هو 10 صور للإعلان الواحد')),
+      );
+      return;
+    }
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (photo != null) {
+        setState(() => _newImages.add(photo));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر التقاط الصورة بالكاميرا: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -6072,8 +6216,14 @@ class _EditListingScreenState extends State<EditListingScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Existing & New Images Manager with 'X' Remove Buttons
-          const Text('إدارة صور الإعلان (اضغط X لحذف الصورة) *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          // Existing & New Local Images Manager with 'X' Remove Buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('إدارة صور الإعلان (اضغط X لحذف الصورة)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text('$_totalImagesCount/10', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+            ],
+          ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
@@ -6138,7 +6288,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                           );
                         }),
                         ...List.generate(_newImages.length, (idx) {
-                          final url = _newImages[idx];
+                          final imageFile = _newImages[idx];
                           return Container(
                             width: 85,
                             margin: const EdgeInsets.only(left: 10),
@@ -6146,8 +6296,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
                               children: [
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(10),
-                                  child: Image.network(
-                                    url,
+                                  child: Image.file(
+                                    File(imageFile.path),
                                     width: 85,
                                     height: 85,
                                     fit: BoxFit.cover,
@@ -6183,18 +6333,37 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 else
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('لا توجد صور متبقية للإعلان.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    child: Text('لا توجد صور متبقية للإعلان. يمكنك إضافة صور جديدة من جهازك.', style: TextStyle(fontSize: 11, color: Colors.grey)),
                   ),
                 const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _showAddImageDialog,
-                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 16),
-                  label: const Text('إضافة صورة جديدة', style: TextStyle(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.maroon,
-                    side: BorderSide(color: AppColors.maroon),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickImagesFromGallery,
+                        icon: const Icon(Icons.photo_library_rounded, size: 16),
+                        label: const Text('إضافة من المعرض (متعدد)', style: TextStyle(fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.maroon,
+                          side: BorderSide(color: AppColors.maroon),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickImageFromCamera,
+                        icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                        label: const Text('التقاط بالكاميرا', style: TextStyle(fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.emerald,
+                          side: BorderSide(color: AppColors.emerald),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

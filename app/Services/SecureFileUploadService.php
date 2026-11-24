@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\SecurityLog;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -34,9 +35,8 @@ class SecureFileUploadService
      * Malicious content patterns (PHP code, shell signatures, webshells).
      */
     protected const MALICIOUS_PATTERNS = [
-        '/<\?php/i',
-        '/<\?=/i',
-        '/<\?[^\x00-\x1f\s]/i',
+        '/<\?php\b/i',
+        '/<\?=\s*[\$_a-zA-Z"\'\(\[]/',
         '/<script\b[^>]*>/i',
         '/__halt_compiler\s*\(\)/i',
         '/\b(eval|passthru|shell_exec|system|popen|proc_open)\s*\(/i',
@@ -104,9 +104,9 @@ class SecureFileUploadService
             }
         }
 
-        // 4. File extension check from client
+        // 4. File extension check from client (allow empty extension to be resolved by magic bytes)
         $clientExt = strtolower($file->getClientOriginalExtension());
-        if (!array_key_exists($clientExt, self::ALLOWED_EXTENSIONS)) {
+        if ($clientExt !== '' && !array_key_exists($clientExt, self::ALLOWED_EXTENSIONS)) {
             return [
                 'is_safe' => false,
                 'reason' => "الامتداد (.{$clientExt}) غير مسموح به. الامتدادات المسموحة فقط: JPG, JPEG, PNG, WEBP.",
@@ -120,7 +120,7 @@ class SecureFileUploadService
         $realMime = finfo_file($finfo, $realPath);
         finfo_close($finfo);
 
-        $allowedMimesForExt = self::ALLOWED_EXTENSIONS[$clientExt] ?? [];
+        $allowedMimesForExt = $clientExt !== '' ? (self::ALLOWED_EXTENSIONS[$clientExt] ?? []) : [];
         if (!in_array($realMime, $allowedMimesForExt, true)) {
             // Check if it is a genuine valid image format that was simply saved with an alternate extension
             $validImageMimes = [
@@ -197,10 +197,20 @@ class SecureFileUploadService
         // 7. Deep image structure validation using getimagesize()
         $imageInfo = @getimagesize($realPath);
         if ($imageInfo === false) {
-            $this->logThreat($ip, 'corrupted_image_header', "فشل قراءة بنية الصورة بواسطة getimagesize: {$originalName}");
+            // Reject corrupted/unrecognized image without banning IP (common with unsupported mobile formats or truncated uploads)
+            $this->securityMonitor->logSecurityEvent(
+                ip: $ip,
+                eventType: 'corrupted_image_header',
+                severity: 'medium',
+                url: request()->fullUrl(),
+                method: request()->method(),
+                userAgent: request()->userAgent(),
+                payload: "فشل قراءة بنية الصورة بواسطة getimagesize: {$originalName}",
+                actionTaken: 'rejected'
+            );
             return [
                 'is_safe' => false,
-                'reason' => 'الملف ليس صورة صالحة أو يحتوي على رأس تالف ومشبوه.',
+                'reason' => 'الملف ليس صورة صالحة أو يحتوي على رأس تالف. يرجى اختيار صورة بصيغة JPG أو PNG أو WEBP.',
                 'safe_extension' => null,
                 'safe_mime' => null,
             ];
@@ -317,10 +327,29 @@ class SecureFileUploadService
     }
 
     /**
-     * Log a security violation and ban IP if repeat offender.
+     * Log a security violation and ban IP only on repeated confirmed upload attacks.
      */
     protected function logThreat(string $ip, string $threatType, string $description): void
     {
+        $counterKey = "upload_threat_count_{$ip}";
+        $count = Cache::increment($counterKey);
+        Cache::put($counterKey, $count, 3600);
+
+        $action = 'rejected';
+
+        // Never instant-ban on a single upload false-positive; ban only on repeated malicious upload attempts (>= 5 in 1 hour)
+        $isLocalhost = in_array($ip, ['127.0.0.1', '::1', 'localhost'], true);
+        if (!$isLocalhost && $count >= 5) {
+            $action = 'blocked';
+            $this->securityMonitor->blockIp(
+                ip: $ip,
+                reason: "حظر أمني: تكرار محاولات رفع ملفات خطرة أو ملغمة ({$threatType} - المحاولات: {$count})",
+                hours: 24,
+                isPermanent: false,
+                blockedBy: 'جدار الحماية وفاحص الملفات (File Shield WAF)'
+            );
+        }
+
         $this->securityMonitor->logSecurityEvent(
             ip: $ip,
             eventType: $threatType,
@@ -329,16 +358,7 @@ class SecureFileUploadService
             method: request()->method(),
             userAgent: request()->userAgent(),
             payload: substr($description, 0, 1000),
-            actionTaken: 'rejected'
-        );
-
-        // Immediate IP block on severe file upload attacks
-        $this->securityMonitor->blockIp(
-            ip: $ip,
-            reason: "حظر أمني فوري: محاولة اختراق عبر رفع ملفات خطرة أو ملغمة ({$threatType})",
-            hours: 72,
-            isPermanent: false,
-            blockedBy: 'جدار الحماية وفاحص الملفات (File Shield WAF)'
+            actionTaken: $action
         );
     }
 }
