@@ -33,6 +33,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="mazad" android:host="listing" />
+                <data android:scheme="mazad" android:host="auth" />
             </intent-filter>
 
             <intent-filter android:autoVerify="true">

@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -765,18 +766,75 @@ class ApiController extends Controller
         ]);
     }
 
-    // Google Sign-In for Mobile & Web API
+    // Google Sign-In for Mobile & Web API (verifies real Google id_token or access_token)
     public function googleLogin(Request $request): JsonResponse
     {
-        $request->validate([
-            'email' => 'required|email',
-            'name' => 'required|string',
-        ]);
+        $googleEmail = $request->input('email');
+        $googleName = $request->input('name');
+        $googleId = $request->input('google_id');
+        $avatarUrl = $request->input('avatar_url');
 
-        $googleEmail = $request->email;
-        $googleName = $request->name;
-        $googleId = $request->input('google_id', 'gid_' . Str::random(10));
-        $avatarUrl = $request->input('avatar_url', 'https://lh3.googleusercontent.com/a/default-user');
+        if ($request->filled('id_token')) {
+            $tokenRes = Http::timeout(10)->get('https://oauth2.googleapis.com/tokeninfo', [
+                'id_token' => $request->input('id_token'),
+            ]);
+
+            if (!$tokenRes->ok()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'تعذر التحقق من رمز الدخول من Google.',
+                ], 401);
+            }
+
+            $payload = $tokenRes->json();
+            $expectedClientId = config('services.google.client_id');
+            $aud = $payload['aud'] ?? '';
+            $azp = $payload['azp'] ?? '';
+
+            if ($expectedClientId && $aud !== $expectedClientId && $azp !== $expectedClientId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'رمز Google غير مطابق لإعدادات التطبيق.',
+                ], 401);
+            }
+
+            if (empty($payload['email']) || (($payload['email_verified'] ?? false) !== true && ($payload['email_verified'] ?? '') !== 'true')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'يرجى استخدام حساب Google ببريد إلكتروني موثق.',
+                ], 422);
+            }
+
+            $googleEmail = $payload['email'];
+            $googleName = $payload['name'] ?? ($googleName ?: 'مستخدم Google');
+            $googleId = $payload['sub'] ?? $googleId;
+            $avatarUrl = $payload['picture'] ?? $avatarUrl;
+        } elseif ($request->filled('access_token')) {
+            $userInfoRes = Http::timeout(10)
+                ->withToken($request->input('access_token'))
+                ->get('https://www.googleapis.com/oauth2/v3/userinfo');
+
+            if (!$userInfoRes->ok() || empty($userInfoRes->json('email'))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'تعذر جلب بيانات حساب Google.',
+                ], 401);
+            }
+
+            $payload = $userInfoRes->json();
+            $googleEmail = $payload['email'];
+            $googleName = $payload['name'] ?? ($googleName ?: 'مستخدم Google');
+            $googleId = $payload['sub'] ?? $googleId;
+            $avatarUrl = $payload['picture'] ?? $avatarUrl;
+        } else {
+            $request->validate([
+                'email' => 'required|email',
+                'name' => 'required|string',
+            ]);
+        }
+
+        $googleId = $googleId ?: ('gid_' . Str::random(10));
+        $avatarUrl = $avatarUrl ?: 'https://lh3.googleusercontent.com/a/default-user';
 
         $user = User::where('email', $googleEmail)
             ->orWhere('google_id', $googleId)

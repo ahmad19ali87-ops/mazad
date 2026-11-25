@@ -216,4 +216,58 @@ class AuthVerificationAndResetTest extends TestCase
         $this->assertNotNull($user);
         $this->assertTrue((bool)$user->is_verified);
     }
+
+    public function test_web_google_oauth_redirect_uses_configured_credentials(): void
+    {
+        config([
+            'services.google.client_id' => '467934742059-tume7aasai0pco63di846e3fcca054sg.apps.googleusercontent.com',
+            'services.google.client_secret' => 'GOCSPX-test-secret',
+            'services.google.redirect' => 'https://mazad.ahmadinsights.online/auth/google/callback',
+        ]);
+
+        $response = $this->get('/auth/google/redirect');
+        $response->assertRedirect();
+
+        $location = $response->headers->get('Location');
+        $this->assertStringContainsString('accounts.google.com', $location);
+        $this->assertStringContainsString('467934742059-tume7aasai0pco63di846e3fcca054sg.apps.googleusercontent.com', $location);
+        $this->assertStringContainsString(urlencode('https://mazad.ahmadinsights.online/auth/google/callback'), $location);
+    }
+
+    public function test_api_google_id_token_verification_accepts_valid_and_rejects_mismatched_client(): void
+    {
+        config([
+            'services.google.client_id' => '467934742059-tume7aasai0pco63di846e3fcca054sg.apps.googleusercontent.com',
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'oauth2.googleapis.com/tokeninfo*valid_token*' => \Illuminate\Support\Facades\Http::response([
+                'aud' => '467934742059-tume7aasai0pco63di846e3fcca054sg.apps.googleusercontent.com',
+                'sub' => 'sub_google_12345',
+                'email' => 'verified.google@gmail.com',
+                'email_verified' => 'true',
+                'name' => 'مستخدم جوجل موثق',
+                'picture' => 'https://lh3.googleusercontent.com/a/test',
+            ], 200),
+            'oauth2.googleapis.com/tokeninfo*wrong_aud*' => \Illuminate\Support\Facades\Http::response([
+                'aud' => 'other-client-id.apps.googleusercontent.com',
+                'sub' => 'sub_wrong',
+                'email' => 'hacker@gmail.com',
+                'email_verified' => 'true',
+            ], 200),
+        ]);
+
+        $badRes = $this->postJson('/api/auth/google', ['id_token' => 'wrong_aud']);
+        $badRes->assertStatus(401);
+
+        $goodRes = $this->postJson('/api/auth/google', ['id_token' => 'valid_token']);
+        $goodRes->assertStatus(200)
+            ->assertJson(['success' => true])
+            ->assertJsonStructure(['token', 'user']);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'verified.google@gmail.com',
+            'google_id' => 'sub_google_12345',
+        ]);
+    }
 }

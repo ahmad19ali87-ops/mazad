@@ -9,6 +9,7 @@ use App\Services\AuthMailService;
 use App\Services\SecurityMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -370,19 +371,42 @@ class AuthController extends Controller
     /**
      * Redirect to Google OAuth Provider
      */
-    public function redirectToGoogle(): RedirectResponse
+    public function redirectToGoogle(Request $request): RedirectResponse
     {
-        return Socialite::driver('google')->redirect();
+        if (empty(config('services.google.client_id')) || empty(config('services.google.client_secret'))) {
+            return redirect()->route('login')->withErrors([
+                'email' => 'إعدادات تسجيل الدخول عبر Google غير مكتملة في الخادم.',
+            ]);
+        }
+
+        if ($request->boolean('mobile')) {
+            session(['google_oauth_mobile' => true]);
+        }
+
+        return Socialite::driver('google')
+            ->with(['prompt' => 'select_account'])
+            ->redirect();
     }
 
     /**
      * Google OAuth Callback
      */
-    public function handleGoogleCallback(): RedirectResponse
+    public function handleGoogleCallback(): RedirectResponse|Response
     {
+        $isMobileFlow = (bool) session()->pull('google_oauth_mobile', false);
+
         try {
             $googleUser = Socialite::driver('google')->user();
         } catch (Throwable $e) {
+            if ($isMobileFlow) {
+                $errUrl = 'mazad://auth/google/callback?error=' . urlencode('تعذر إتمام الدخول عبر Google');
+                return response()->view('auth.google-mobile-callback', [
+                    'deepLink' => $errUrl,
+                    'isSuccess' => false,
+                    'message' => 'تعذر إتمام الدخول عبر Google: ' . $e->getMessage(),
+                ]);
+            }
+
             return redirect()->route('login')->withErrors([
                 'email' => 'تعذر إتمام الدخول عبر Google: ' . $e->getMessage(),
             ]);
@@ -416,6 +440,16 @@ class AuthController extends Controller
                 'is_verified' => true,
                 'email_verified_at' => now(),
                 'remember_contact_info' => true,
+            ]);
+        }
+
+        if ($isMobileFlow) {
+            $token = $user->createToken('mazad-mobile-google')->plainTextToken;
+            $deepLink = 'mazad://auth/google/callback?token=' . urlencode($token);
+            return response()->view('auth.google-mobile-callback', [
+                'deepLink' => $deepLink,
+                'isSuccess' => true,
+                'message' => 'تم تسجيل الدخول بنجاح! جارٍ العودة إلى تطبيق مزاد سوريا...',
             ]);
         }
 

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
@@ -37,6 +39,8 @@ class AppConfig {
   // الخادم الحي المباشر لمنصة مزاد سوريا
   static const String liveHost = 'https://mazad.ahmadinsights.online';
   static const bool useLocalHost = false;
+  static const String googleClientId =
+      '467934742059-tume7aasai0pco63di846e3fcca054sg.apps.googleusercontent.com';
 
   static String get host {
     if (useLocalHost) {
@@ -150,8 +154,20 @@ class AppState {
     }
   }
 
-  // Fast Google Sign-in API call
+  static bool _googleInitialized = false;
+
+  static Future<void> ensureGoogleInitialized() async {
+    if (_googleInitialized) return;
+    await GoogleSignIn.instance.initialize(
+      serverClientId: AppConfig.googleClientId,
+    );
+    _googleInitialized = true;
+  }
+
+  // Real Google Sign-in API call (verifies id_token / access_token on backend)
   static Future<bool> googleLogin({
+    String? idToken,
+    String? accessToken,
     String? email,
     String? name,
     String? googleId,
@@ -162,10 +178,12 @@ class AppState {
         Uri.parse('${AppConfig.baseUrl}/auth/google'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: jsonEncode({
-          'email': email ?? 'ahmad.suri.google@gmail.com',
-          'name': name ?? 'أحمد السوري (Google)',
-          'google_id': googleId ?? 'gid_google_user_9921',
-          'avatar_url': avatarUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+          'id_token': ?idToken,
+          'access_token': ?accessToken,
+          'email': ?email,
+          'name': ?name,
+          'google_id': ?googleId,
+          'avatar_url': ?avatarUrl,
         }),
       );
 
@@ -180,6 +198,28 @@ class AppState {
     return false;
   }
 
+  static Future<bool> loginWithToken(String sanctumToken) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/user'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $sanctumToken',
+        },
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['user'] != null) {
+          await saveSession(sanctumToken, data['user']);
+          return true;
+        }
+      }
+    } catch (e) {
+      debugPrint('Token login error: $e');
+    }
+    return false;
+  }
+
   static Future<void> logout() async {
     try {
       if (token != null) {
@@ -187,6 +227,11 @@ class AppState {
           Uri.parse('${AppConfig.baseUrl}/logout'),
           headers: authHeaders,
         );
+      }
+    } catch (_) {}
+    try {
+      if (_googleInitialized) {
+        await GoogleSignIn.instance.signOut();
       }
     } catch (_) {}
     token = null;
@@ -3782,8 +3827,12 @@ class _AuthDialogState extends State<AuthDialog> {
     'إدلب',
   ];
 
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _googleDeepLinkSub;
+
   @override
   void dispose() {
+    _googleDeepLinkSub?.cancel();
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
@@ -4050,235 +4099,108 @@ class _AuthDialogState extends State<AuthDialog> {
     }
   }
 
-  // 7. Strictly In-App Google Sign-In Sheet (No External Browser Bouncing)
-  void _openInAppGoogleAuth() {
-    final nav = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+  // 7. Real In-App Google Sign-In (Native In-App Picker + In-App Browser Sheet fallback)
+  Future<void> _openInAppGoogleAuth() async {
+    if (_loading) return;
+    setState(() => _loading = true);
 
-    final inAppGoogleEmailCtrl = TextEditingController(
-      text: _emailCtrl.text.isNotEmpty ? _emailCtrl.text.trim() : 'user.google@gmail.com',
-    );
-    final inAppGoogleNameCtrl = TextEditingController(
-      text: _nameCtrl.text.isNotEmpty ? _nameCtrl.text.trim() : 'مستخدم مزاد سوريا',
-    );
+    try {
+      await AppState.ensureGoogleInitialized();
+      final account = await GoogleSignIn.instance.authenticate(
+        scopeHint: const ['email', 'profile'],
+      );
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (bottomCtx) {
-        bool inAppLoading = false;
-
-        return StatefulBuilder(
-          builder: (context, setBottomState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Row(
-                    children: [
-                      Image.network(
-                        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
-                        height: 26,
-                        errorBuilder: (_, error, stack) => const Icon(Icons.g_mobiledata, color: Colors.blue, size: 28),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'تسجيل الدخول باستخدام Google',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            Text(
-                              'المتابعة إلى منصة مزاد سوريا ضمن التطبيق',
-                              style: TextStyle(fontSize: 11, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-
-                  // Quick Account Option Card
-                  InkWell(
-                    onTap: inAppLoading
-                        ? null
-                        : () async {
-                            setBottomState(() => inAppLoading = true);
-                            final success = await AppState.googleLogin(
-                              email: inAppGoogleEmailCtrl.text.trim(),
-                              name: inAppGoogleNameCtrl.text.trim(),
-                              googleId: 'g_${DateTime.now().millisecondsSinceEpoch}',
-                            );
-                            setBottomState(() => inAppLoading = false);
-                            if (success) {
-                              if (bottomCtx.mounted) {
-                                Navigator.of(bottomCtx).pop();
-                              }
-                              if (mounted) {
-                                nav.pop();
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text('تم تسجيل الدخول بنجاح عبر حساب Google'),
-                                    backgroundColor: Color(0xFF10B981),
-                                  ),
-                                );
-                              }
-                            } else {
-                              messenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('تعذر إكمال الدخول بحساب Google'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        border: Border.all(color: Colors.blue.shade200),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: Colors.white,
-                            radius: 20,
-                            child: Icon(Icons.person, color: Colors.blue),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  inAppGoogleNameCtrl.text,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                ),
-                                Text(
-                                  inAppGoogleEmailCtrl.text,
-                                  style: TextStyle(fontSize: 11, color: Colors.blue.shade900),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.blue),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  TextField(
-                    controller: inAppGoogleNameCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'اسم صاحب الحساب',
-                      prefixIcon: const Icon(Icons.badge_outlined, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: inAppGoogleEmailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: 'بريد حساب Google',
-                      prefixIcon: const Icon(Icons.alternate_email, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  ElevatedButton.icon(
-                    onPressed: inAppLoading
-                        ? null
-                        : () async {
-                            setBottomState(() => inAppLoading = true);
-                            final success = await AppState.googleLogin(
-                              email: inAppGoogleEmailCtrl.text.trim(),
-                              name: inAppGoogleNameCtrl.text.trim(),
-                              googleId: 'g_${DateTime.now().millisecondsSinceEpoch}',
-                            );
-                            setBottomState(() => inAppLoading = false);
-                            if (success) {
-                              if (bottomCtx.mounted) {
-                                Navigator.of(bottomCtx).pop();
-                              }
-                              if (mounted) {
-                                nav.pop();
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text('تم تسجيل الدخول بنجاح عبر حساب Google'),
-                                    backgroundColor: Color(0xFF10B981),
-                                  ),
-                                );
-                              }
-                            } else {
-                              messenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('تعذر إكمال الدخول بحساب Google'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                    icon: inAppLoading
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.login),
-                    label: const Text('المتابعة الفورية بحساب Google المختار'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade700,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(44),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-                  const Text(
-                    'يتم التحقق الآمن مباشرة داخل التطبيق دون الحاجة لفتح متصفح خارجي',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          },
+      final String? idToken = account.authentication.idToken;
+      String? accessToken;
+      if (idToken == null) {
+        final authz = await account.authorizationClient.authorizationForScopes(
+          const ['email', 'profile'],
         );
-      },
-    );
+        accessToken = authz?.accessToken;
+      }
+
+      final success = await AppState.googleLogin(
+        idToken: idToken,
+        accessToken: accessToken,
+        email: account.email,
+        name: account.displayName ?? 'مستخدم Google',
+        googleId: account.id,
+        avatarUrl: account.photoUrl,
+      );
+
+      if (!mounted) return;
+      if (success) {
+        Navigator.of(context).pop();
+        _showMessage('تم تسجيل الدخول بنجاح عبر حساب Google');
+      } else {
+        _showMessage('تعذر إكمال التحقق من حساب Google على الخادم', isError: true);
+      }
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        // User dismissed the in-app Google account picker
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      debugPrint('Native GoogleSignIn fallback (${e.code}): ${e.description}');
+      await _launchInAppGoogleOAuth();
+      return;
+    } catch (e) {
+      debugPrint('Native GoogleSignIn error, falling back to in-app OAuth: $e');
+      await _launchInAppGoogleOAuth();
+      return;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _launchInAppGoogleOAuth() async {
+    await _googleDeepLinkSub?.cancel();
+
+    _googleDeepLinkSub = _appLinks.uriLinkStream.listen((Uri uri) async {
+      if (uri.scheme == 'mazad' && uri.host == 'auth') {
+        await _googleDeepLinkSub?.cancel();
+        _googleDeepLinkSub = null;
+        try {
+          await closeInAppWebView();
+        } catch (_) {}
+
+        final token = uri.queryParameters['token'];
+        final err = uri.queryParameters['error'];
+
+        if (token != null && token.isNotEmpty) {
+          final ok = await AppState.loginWithToken(token);
+          if (!mounted) return;
+          setState(() => _loading = false);
+          if (ok) {
+            Navigator.of(context).pop();
+            _showMessage('تم تسجيل الدخول بنجاح عبر حساب Google');
+          } else {
+            _showMessage('تعذر تحميل بيانات الحساب بعد الدخول', isError: true);
+          }
+        } else {
+          if (!mounted) return;
+          setState(() => _loading = false);
+          _showMessage(err ?? 'تعذر إتمام الدخول عبر Google', isError: true);
+        }
+      }
+    });
+
+    try {
+      final authUri = Uri.parse('${AppConfig.host}/auth/google/redirect?mobile=1');
+      final launched = await launchUrl(
+        authUri,
+        mode: LaunchMode.inAppBrowserView,
+      );
+      if (!launched && mounted) {
+        setState(() => _loading = false);
+        _showMessage('تعذر فتح نافذة تسجيل الدخول بحساب Google داخل التطبيق', isError: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showMessage('تعذر بدء تسجيل الدخول عبر Google: $e', isError: true);
+      }
+    }
   }
 
   @override

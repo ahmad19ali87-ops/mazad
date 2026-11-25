@@ -47,8 +47,8 @@ class SecurityFirewallMiddleware
         }
 
         // 2. Real-time attack inspection (SQLi, XSS, Scanner, Traversal)
-        // Skip inspection on safe admin, login, and asset routes
-        if (!$isAdminRoute && !$request->is('build/*') && !$request->is('storage/*')) {
+        // Skip inspection on safe admin, login, Google OAuth callback, and asset routes
+        if (!$isAdminRoute && !$request->is('build/*') && !$request->is('storage/*') && !$request->is('auth/google*')) {
             $attack = $this->securityMonitor->inspectRequest($request);
             if ($attack && $this->securityMonitor->isIpBlocked($ip)) {
                 if ($request->expectsJson() || $request->is('api/*')) {
